@@ -1548,3 +1548,847 @@ getSortedDates(entries): string[]
 // Returns sorted unique date strings from billing entries
 ```
 
+
+---
+
+# PART 21: AI / LLM INTEGRATION
+
+## 21.1 Backend: server.ts
+
+The entire backend is one file: `server.ts` in the project root.
+
+### callNvidia() function
+```typescript
+const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+const NVIDIA_MODEL = "minimaxai/minimax-m3";
+
+async function callNvidia(messages: {role: string; content: string}[]): Promise<string> {
+  const key = process.env.NVIDIA_API_KEY;
+  const response = await fetch(NVIDIA_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: NVIDIA_MODEL,
+      messages,
+      temperature: 1.0,
+      top_p: 0.95,
+      max_tokens: 8192,
+      stream: false,
+    }),
+  });
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content ?? "";
+}
+```
+
+### Two API Routes
+
+**POST /api/ai/report**
+- Input: `{ context: string }` — a single large string containing the instruction + all restaurant data
+- Calls: `callNvidia([{ role: "user", content: context }])`
+- Output: `{ text: string }` — the AI-generated report narrative
+- Used by: ReportPage.tsx (morning brief + evening report)
+
+**POST /api/ai/chat**
+- Input: `{ messages: {role, content}[] }` — full conversation history
+- Calls: `callNvidia(messages)`
+- Output: `{ text: string }` — the AI's reply
+- Used by: ChatPage.tsx (conversational analyst)
+
+## 21.2 Frontend AI Client: aiClient.ts
+
+```typescript
+export async function callAI(
+  endpoint: '/api/ai/report' | '/api/ai/chat',
+  payload: { context: string; messages?: AIMessage[] }
+): Promise<AIResponse> {
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  return { text: data.text ?? '' };
+}
+```
+This is a thin HTTP wrapper. It calls the Express server (same origin, port 3000), not the NVIDIA API directly. The API key never reaches the browser.
+
+---
+
+# PART 22: REPORT GENERATION (RAG PATTERN)
+
+## 22.1 File Location
+`src/lib/reportGenerator.ts`
+
+## 22.2 What is RAG?
+RAG = Retrieval-Augmented Generation. Instead of asking the AI a generic question, you first retrieve relevant data, attach it to the prompt as context, and then ask the AI to reason over that data. This grounds the AI response in real facts rather than hallucinated ones.
+
+In BusinessIQ:
+- **Retrieval** = `buildReportContext()` assembles all analytics into a structured text string
+- **Augmented** = that context string is prepended to the instruction prompt
+- **Generation** = NVIDIA model generates a report grounded in the actual data
+
+## 22.3 buildReportContext()
+
+This function assembles a structured plain-text document from all analytics:
+
+```
+RESTAURANT BUSINESS DATA (as of 2024-11-15)
+
+=== TODAY'S PERFORMANCE ===
+Revenue: ₹8,450
+Orders: 67
+Gross Profit: ₹5,200
+Food Cost %: 38.5% (industry benchmark: 30%)
+Top dishes today: Paneer Butter Masala (12 plates), Dal Fry (18 plates)...
+
+=== WEEKLY OVERVIEW ===
+This week revenue: ₹52,300
+Last week revenue: ₹48,100
+Change: +8.7%
+
+=== TOP DISHES (all time) ===
+1. Dal Fry: 420 plates, ₹33,600
+2. Paneer Butter Masala: 280 plates, ₹44,800
+...
+
+=== MENU PROFITABILITY ===
+2 star dishes (protect these), 1 hidden gem (promote more)...
+
+=== OVERALL KPIs ===
+Total revenue (all time): ₹3,24,000
+Average daily revenue: ₹10,800
+```
+
+## 22.4 Prompt Templates
+
+**Evening Report prompt:**
+> "You are a friendly AI business analyst for [restaurant name]. Based on the data below, generate an end-of-day business report. Include: overall performance verdict (strong/decent/weak day), key wins, one or two specific things that need attention, and a short actionable suggestion for tomorrow. Write in plain, warm, human language. Do not use bullet points. Keep it under 200 words. End by asking how the day felt from the owner's perspective."
+
+**Morning Brief prompt:**
+> "You are a friendly AI business analyst for [restaurant name]. Based on the data below, generate a morning brief. Include: yesterday's performance summary, what to expect today based on patterns, and one specific preparation tip for today. Write in plain, warm language. Under 150 words."
+
+The instruction + context string is sent as a single `user` message to the NVIDIA API.
+
+## 22.5 Report Storage
+Reports are stored in localStorage under `biq_reports`, capped at 30 (newest first). Each report stores:
+- The AI text narrative
+- The `DailySummary` snapshot at time of generation
+- Type (morning/evening), date, generatedAt timestamp
+
+---
+
+# PART 23: AI CHAT SYSTEM
+
+## 23.1 File Location
+`src/pages/ChatPage.tsx`
+
+## 23.2 System Prompt Construction
+Every chat request sends the full restaurant context as a system message:
+
+```typescript
+const context = buildReportContext(billing, menu);
+const systemPrompt = `You are a smart, friendly AI business analyst for "${restaurant.name}".
+You have access to the restaurant's actual business data below.
+Answer questions specifically using that data — give concrete numbers, specific dish names,
+and actionable advice. Keep answers concise (3-5 sentences max).
+Be warm but direct, like a trusted advisor.
+
+DATA:
+${context}`;
+```
+
+## 23.3 Conversation History Management
+Only the last 10 messages are sent to the API (to stay within token limits):
+```typescript
+const aiMessages = [
+  { role: 'system', content: systemPrompt },
+  ...updated.slice(-10).map(m => ({ role: m.role, content: m.content })),
+];
+```
+
+## 23.4 Message Persistence
+Every user and assistant message is immediately saved to localStorage:
+```typescript
+storage.appendChat(userMsg);   // saved before API call
+storage.appendChat(assistantMsg); // saved after API response
+```
+Chat history survives page refresh. Capped at 100 messages.
+
+## 23.5 Suggested Questions
+6 pre-built questions shown on empty chat state:
+- "Which is my most profitable dish?"
+- "What was my best day this week?"
+- "Which dishes should I remove from the menu?"
+- "How can I reduce food wastage?"
+- "What is my average food cost percentage?"
+- "Which meal period brings the most revenue?"
+
+Clicking any of them calls `sendMessage(question)` directly.
+
+## 23.6 Loading State (Typing Indicator)
+Three bouncing dots shown while waiting for API response:
+```typescript
+{[0,1,2].map(i => (
+  <div className="w-2 h-2 rounded-full animate-bounce"
+    style={{ animationDelay: `${i * 0.15}s` }} />
+))}
+```
+
+---
+
+# PART 24: DESIGN SYSTEM
+
+## 24.1 Design Tokens (tokens.css)
+File: `src/design-system/tokens.css`
+
+All visual constants are defined as CSS custom properties:
+
+**Brand Colors:**
+- `--color-unity: #5B6B4A` — Olive green, the primary brand color (buttons, links, active states)
+- `--color-sunburst: #E8A830` — Amber/gold, used for icons and warnings
+- `--color-carbon: #2C2C2C` — Near-black, used for dark backgrounds
+
+**Semantic Colors:**
+- `--color-success: #4A7C59` — Green for positive metrics
+- `--color-danger: #C0392B` — Red for negative metrics / warnings
+- `--color-warning: #E8A830` — Amber for caution states
+
+**Typography:**
+- `--font-display: 'DM Serif Display'` — For large KPI values
+- `--font-body: 'DM Sans'` — For all body text
+- `--font-mono: 'IBM Plex Mono'` — For numbers, financial figures
+
+**Spacing scale:** --space-1 (4px) through --space-16 (64px)
+**Border radius:** --radius-sm (4px) through --radius-full (9999px)
+**Shadows:** --shadow-sm, --shadow-md, --shadow-lg
+
+## 24.2 Component Library (design-system/components/index.tsx)
+
+### Button
+4 variants: `primary` (green filled), `secondary` (green outlined), `ghost` (transparent), `danger` (red filled)
+3 sizes: `sm`, `md`, `lg`
+Props: `loading` (shows spinner), `disabled`, `onClick`, `type`
+
+### Card
+Container with optional `title`, `subtitle`, `action` slot.
+4 padding sizes: none/sm/md/lg.
+Always uses `--color-bg-card` background with border and shadow.
+
+### Badge
+Inline label with 5 color variants: `success`, `warning`, `danger`, `neutral`, `info`
+Optional `dot` prop adds a colored circle before the text.
+Used everywhere for status indicators (confidence levels, trends, recommendations).
+
+### MetricTile
+The KPI card component. Props:
+- `label` — small uppercase label
+- `value` — large display number
+- `valueFont` — `display` (serif), `mono` (monospace), or `body`
+- `change` — shows ↑/↓ percentage change in green/red
+- `subtext` — small secondary text below value
+- `accent` — override value color (e.g., red for bad food cost %)
+- `icon` — icon in top-right corner
+
+### DataTable
+Sortable table component. Props:
+- `columns` — array of column definitions with optional `render`, `sortable`, `numeric`
+- `data` — array of row objects
+- `keyField` — unique identifier field
+- `onRowClick` — optional row click handler
+Client-side sorting: clicking a sortable column header toggles asc/desc.
+
+### EmptyState
+Centered placeholder shown when no data exists.
+Props: `icon`, `title`, `description`, `action` (a button/link)
+
+### Modal
+Full-screen overlay with centered card.
+Closes on backdrop click or × button.
+`width` prop controls max-width.
+
+### Tooltip
+CSS-only hover tooltip using `group-hover:opacity-100`.
+Shows content above the wrapped element on hover.
+
+### Alert
+Colored information banner. 4 variants: success/warning/danger/info.
+Optional `onClose` button.
+
+## 24.3 Chart Library (design-system/charts/index.tsx)
+
+All charts use `ResponsiveContainer` from Recharts — automatically fills their parent width.
+
+### BarChart
+Supports horizontal and vertical layouts.
+Multiple bars per data point (grouped).
+Rounded corners on bars.
+
+### LineChart
+Smooth monotone curves.
+Multiple lines with optional dashed style.
+No dots on data points (clean look).
+
+### AreaChart
+Gradient fill (15% opacity at top → 1% at bottom).
+Smooth monotone curves with stroke.
+Multiple overlapping areas.
+
+### DonutChart
+PieChart with `innerRadius="55%"` creating the donut hole.
+Legend below.
+Custom tooltip formatter.
+
+### HeatmapChart (Custom — NOT Recharts)
+Built using CSS Grid, not SVG.
+Rows = days, Columns = hours.
+Cell color computed by `heatmapColor(intensity)` function:
+- Low intensity → light green
+- Medium → amber
+- High → red
+Hover scale animation on each cell.
+Used for Workforce Planning heatmap.
+
+### Chart Color Palette
+```typescript
+export const CHART_COLORS = ['#5B6B4A', '#E8A830', '#8B9B7A', '#C0392B', '#2C7A5C', '#D4A017'];
+```
+Olive green, amber, sage, red, teal, gold — matches brand tokens.
+
+---
+
+# PART 25: NAVIGATION AND LAYOUT
+
+## 25.1 File Location
+`src/layout/AppShell.tsx`
+
+## 25.2 Structure
+```
+┌─────────────────────────────────────────────────┐
+│  TOPBAR (fixed, height 56px)                    │
+│  [☰] Restaurant Name          [🔔] [Upload]     │
+├──────────┬──────────────────────────────────────┤
+│ SIDEBAR  │  PAGE CONTENT                        │
+│ (fixed)  │  (scrollable)                        │
+│ 240px    │  pt-14 (topbar offset)               │
+│ or 56px  │                                      │
+│ collapsed│                                      │
+└──────────┴──────────────────────────────────────┘
+```
+
+## 25.3 Sidebar Navigation Groups
+
+**Overview section:**
+- Dashboard (`/dashboard`) — LayoutDashboard icon
+- Reports (`/report`) — FileText icon
+- AI Analyst (`/chat`) — MessageSquare icon
+
+**Intelligence section (ML pages):**
+- Ingredient Forecast (`/ml/ingredients`) — Package icon
+- Wastage Management (`/ml/wastage`) — Trash2 icon
+- Dynamic Pricing (`/ml/pricing`) — DollarSign icon
+- Promotion Analysis (`/ml/promotions`) — Megaphone icon
+- Workforce Planning (`/ml/workforce`) — Users icon
+
+**Settings section:**
+- Menu Setup (`/menu`) — UtensilsCrossed icon
+- Forecasting (`/forecast`) — TrendingUp icon
+- Upload Data (`/upload`) — Upload icon
+
+## 25.4 Active State Detection
+```typescript
+const active = pathname === to || (to !== '/dashboard' && pathname.startsWith(to));
+```
+Active link gets: green left border (`border-l-[3px] border-[--color-sunburst]`), green background tint.
+
+## 25.5 Collapsible Sidebar
+- Expanded: 240px wide, shows icons + labels
+- Collapsed: 56px wide, shows icons only (labels hidden)
+- Toggle button in sidebar header
+- Mobile: sidebar hidden off-screen, overlay appears when open
+- Page content `marginLeft` transitions smoothly: `style={{ marginLeft: sidebarW, transition: 'margin-left 0.2s' }}`
+
+## 25.6 Topbar
+Fixed at top. Shows:
+- Hamburger menu button (mobile only)
+- Restaurant name from localStorage
+- Bell icon (notification placeholder)
+- Upload button (shortcut to /upload)
+
+---
+
+# PART 26: ALL PAGES — COMPLETE WALKTHROUGH
+
+## 26.1 OnboardingPage (`/`)
+**File:** `src/pages/OnboardingPage.tsx`
+- Shows on first visit or when localStorage has no restaurant data
+- Dark background (#0D1117), centered card
+- Form: Restaurant Name (required), Owner Name (required), City, Revenue Range (dropdown)
+- On submit: saves to `biq_restaurant`, navigates to `/upload`
+- No back navigation — once submitted, RequireOnboarding passes
+
+## 26.2 UploadPage (`/upload`)
+**File:** `src/pages/UploadPage.tsx`
+- Drag-and-drop zone + click-to-browse
+- Accepts .csv and .txt files
+- "Use Sample Data" generates 30 days of fake data for 7 Indian dishes
+- "Download Sample CSV" creates a template for the user to fill
+- Progress bar during parsing (batched 500 rows at a time)
+- Preview: shows row count, day count, dish count, first 8 rows
+- "Save & Continue" deduplicates and appends to localStorage, navigates to `/menu`
+
+## 26.3 MenuPage (`/menu`)
+**File:** `src/pages/MenuPage.tsx`
+- Editable table: each row = one dish with Name, Selling Price, Raw Material Cost inputs
+- Margin % auto-calculated and shown as Badge (green ≥50%, amber ≥30%, red <30%)
+- Pre-loaded with 7 sample dishes if menu is empty
+- Menu Engineering Matrix shown at top (collapsible) when billing data exists
+- "Add dish" adds empty row; Trash icon removes a row
+- "Save Menu" filters empty names, saves to localStorage, navigates to `/dashboard`
+- When billing exists, each dish row shows its quadrant badge (Star/Hidden Gem/Volume Trap/Dead Weight)
+
+## 26.4 DashboardPage (`/dashboard`)
+**File:** `src/pages/DashboardPage.tsx`
+- All data from localStorage, all computed with useMemo
+- 4 KPI MetricTiles, Revenue AreaChart, Top Dishes DataTable, Meal Period DonutChart, Weekly Comparison Card, Peak Hours BarChart
+- Empty state with link to /upload if no billing data
+
+## 26.5 ForecastPage (`/forecast`)
+**File:** `src/pages/ForecastPage.tsx`
+- Runs `runWMAForecast(billing, 7)` on mount
+- Shows: 7-day revenue forecast LineChart, day-by-day table with confidence badges, per-dish prep quantity matrix (rows=dishes, columns=next 7 days)
+- MAE and RMSE displayed as MetricTiles
+- Minimum 7 days data required
+
+## 26.6 ReportPage (`/report`)
+**File:** `src/pages/ReportPage.tsx`
+- Shows latest day KPIs and top dishes
+- "Morning Brief" and "Evening Report" buttons trigger AI generation
+- Loading spinner while AI generates
+- Reports displayed as cards (newest first), max 30 stored
+- Each card shows: icon (sun/moon), date, AI text, revenue/orders/food cost footer
+
+## 26.7 ChatPage (`/chat`)
+**File:** `src/pages/ChatPage.tsx`
+- Full-height chat interface
+- Empty state shows suggested questions
+- User messages: right-aligned, green background
+- AI messages: left-aligned, card background
+- Typing indicator (3 bouncing dots) while loading
+- Enter key sends message; Shift+Enter for new line
+- "Clear" button deletes all chat history
+
+## 26.8 WastageManagementPage (`/ml/wastage`)
+**File:** `src/pages/ml/WastageManagementPage.tsx`
+- 4 tabs:
+  1. **Today's Prep Plan** — DataTable of newsvendor predictions: dish, recommended qty, usual qty, saving, confidence, action
+  2. **Wastage Analysis** — Daily waste bar chart (30 days) + top offenders table with trend badges
+  3. **Financial Impact** — MetricTiles: weekly waste ₹, monthly waste ₹, waste as % of revenue
+  4. **Weekly Report** — Text summary of wastage situation
+- Green savings banner at top showing total ₹ saved if plan followed
+- Minimum 14 days data required
+
+## 26.9 DynamicPricingPage (`/ml/pricing`)
+**File:** `src/pages/ml/DynamicPricingPage.tsx`
+- Alert banner: "X dishes have pricing opportunities, adjust for ₹Y/month"
+- 4 MetricTiles: underpriced dishes, overpriced dishes, monthly revenue gain, total dishes analyzed
+- DataTable with elasticity, current price, recommended price, revenue impact %, confidence, Review button
+- Clicking a row or Review opens a Modal with:
+  - Current vs recommended price comparison
+  - Explanation text (reasoning from the algorithm)
+  - Price change %, demand impact %, revenue impact %
+  - "Apply Price Change" button — directly updates menu in localStorage
+
+## 26.10 IngredientForecastPage (`/ml/ingredients`)
+**File:** `src/pages/ml/IngredientForecastPage.tsx`
+- "Manage Ingredient Mappings" modal — define dish→ingredient relationships
+- Default mappings for Dal Fry, Paneer Butter Masala, Veg Biryani, Chapati
+- Summary MetricTiles: ingredients count, MAE, training days, accuracy %
+- DataTable: ingredient name, total needed (7 days), unit, confidence
+- Clicking a row shows 7-day LineChart for that ingredient (predicted + upper bound)
+
+## 26.11 WorkforcePlanningPage (`/ml/workforce`)
+**File:** `src/pages/ml/WorkforcePlanningPage.tsx`
+- Toggle: Heatmap view vs Schedule table view
+- Heatmap: day × hour grid, color = demand intensity, cell label = staff count
+- Schedule table: date, hour, shift, demand bin, predicted orders, K+S+C staff
+- "Tomorrow's Peak Hours" — top 3 busiest hours with demand bin and staffing breakdown
+- MetricTiles: peak staff needed, estimated weekly staff cost (at ₹600/staff/day)
+
+## 26.12 PromotionAnalysisPage (`/ml/promotions`)
+**File:** `src/pages/ml/PromotionAnalysisPage.tsx`
+- "Log Promotion" button opens modal: name, start date, end date, type (discount/combo/festival/flat), discount %
+- Promotion list on left: each card shows profitability impact badge and recommendation badge
+- Selecting a promotion shows ITS analysis on right:
+  - 3 KPIs: revenue impact %, order volume impact %, profitability impact %
+  - Statistical significance Alert (p-value)
+  - Revenue over time AreaChart (promotion period highlighted)
+  - Natural language finding
+  - Repeat/Modify/Discontinue badge
+
+---
+
+# PART 27: END-TO-END USER JOURNEY
+
+## Complete flow from first visit to full usage:
+
+```
+1. User opens http://localhost:3000
+   → RequireOnboarding: no restaurant in localStorage
+   → Redirected to OnboardingPage (/)
+
+2. User fills form: "Shyam Dhaba", "Shashank", "Bangalore", "₹50K–₹1L"
+   → storage.setRestaurant(form) saves to biq_restaurant
+   → navigate('/upload')
+
+3. User uploads billing CSV from Petpooja POS
+   → csvParser.ts detects delimiter, maps headers, normalizes dates
+   → BillingEntry[] created and previewed
+   → storage.appendBilling(entries) saves to biq_billing (deduplicated)
+   → navigate('/menu')
+
+4. User sets dish costs on MenuPage
+   → storage.setMenu(items) saves to biq_menu
+   → navigate('/dashboard')
+
+5. Dashboard loads
+   → getDailySummaries(billing, menu) computes all daily KPIs
+   → Charts render: revenue trend, top dishes, meal split, peak hours
+
+6. User visits /forecast
+   → runWMAForecast(billing, 7) computes day-of-week WMA predictions
+   → 7-day forecast + per-dish prep quantities displayed
+
+7. User visits /ml/wastage
+   → runWastagePredictions(billing, menu) runs Newsvendor model
+   → Prep plan shown with recommended vs usual quantities
+
+8. User visits /ml/pricing
+   → runDynamicPricing(billing, menu) runs OLS elasticity
+   → Price recommendations shown; user clicks Apply
+   → storage.setMenu(updatedMenu) with new prices
+
+9. User visits /report
+   → Clicks "Evening Report"
+   → buildReportContext() assembles all analytics into text
+   → callAI('/api/ai/report', {context}) POSTs to Express server
+   → server.ts calls callNvidia() with NVIDIA API key
+   → AI narrative returned, stored in biq_reports, displayed
+
+10. User visits /chat
+    → Types "Which dish should I promote tomorrow?"
+    → System prompt built with full restaurant context
+    → Last 10 messages + system prompt sent to /api/ai/chat
+    → AI responds with specific, data-grounded answer
+    → Conversation persisted to biq_chat
+```
+
+---
+
+# PART 28: POA / AUTOMATION SYSTEM
+
+## 28.1 What is Automated in BusinessIQ?
+
+BusinessIQ does not have a traditional scheduler or cron job system. Instead, "automation" happens through:
+
+**1. Automatic computation on data load**
+Every ML module runs automatically when the page loads using `useMemo`. There is no "Run Analysis" button — the moment you navigate to `/ml/wastage`, the Newsvendor model runs on your billing data and results appear.
+
+**2. Automatic prep plan generation**
+The `runWastagePredictions()` function always targets `tomorrow` (one day after the last billing date). Every morning, if the owner uploads yesterday's billing data, the prep plan automatically updates for today.
+
+**3. Automatic pricing application**
+When the user clicks "Apply Price Change" on the Dynamic Pricing page, the menu in localStorage is updated immediately. All subsequent analytics, wastage calculations, and ingredient forecasts automatically use the new price — no manual refresh needed.
+
+**4. Automatic report archiving**
+Reports are automatically capped at 30 and stored newest-first. Old reports are automatically dropped without user intervention.
+
+**5. Automatic feature engineering**
+Every time an ML module runs, `features.ts` automatically detects whether tomorrow is a festival, a weekend, or a month-end, and adjusts predictions accordingly — no manual input required from the owner.
+
+**6. Ingredient purchase list as automation output**
+The `runIngredientForecast()` output is a ready-to-use purchase list for the next 7 days. The owner can screenshot or copy this list directly to share with their supplier — automating the purchase planning workflow.
+
+## 28.2 The Daily Workflow (Ideal Usage)
+
+```
+Morning:
+  1. Upload yesterday's billing CSV → data updated automatically
+  2. Open Wastage Management → today's prep plan auto-generated
+  3. Open Workforce Planning → today's staffing schedule auto-generated
+  4. Click "Morning Brief" on Reports → AI summarizes yesterday + today's outlook
+
+Evening:
+  5. Click "Evening Report" → AI generates end-of-day analysis
+  6. Open Dynamic Pricing → check if any pricing opportunities emerged
+
+Weekly:
+  7. Open Ingredient Forecast → download 7-day purchase list
+  8. Open Promotion Analysis → analyze last week's promotion (if any)
+  9. Open Dashboard → review weekly comparison, top dishes, trends
+```
+
+---
+
+# PART 29: POTENTIAL WEAKNESSES (FOR VIVA)
+
+## 29.1 Technical Limitations
+
+**localStorage size limit (~5MB)**
+All data is stored in localStorage which is capped at ~5MB per origin. A restaurant with 2+ years of detailed billing data (tens of thousands of rows) could hit this limit. The application has no warning or compression for this.
+
+**No real-time data**
+Data only updates when the owner manually uploads a new CSV. There is no live POS integration — requires manual export and re-upload every day.
+
+**No multi-device sync**
+Data stored in one browser's localStorage is not accessible from another device. If the owner switches from laptop to tablet, they lose all their data.
+
+**No authentication**
+Anyone with access to the device and browser can see all business data. There is no password protection.
+
+**Festival calendar is hardcoded for 2024-2026**
+`features.ts` contains dates only up to January 2026. The model will miss festival effects after this period.
+
+**OLS elasticity uses cross-sectional variation**
+Since prices rarely change in small restaurants, the OLS elasticity is estimated across dishes (not across time periods). This is a proxy, not a true elasticity estimate. Dishes at different price points might differ in quality, portion size, or popularity for reasons unrelated to price.
+
+**WMA assumes stationarity**
+The Weighted Moving Average assumes that the past pattern repeats. It cannot handle sudden disruptions (new competitor opens, road construction reduces footfall, pandemic). The forecast will lag reality during structural breaks.
+
+## 29.2 Scalability Limitations
+
+- The app is designed for a single restaurant. Multi-branch support would require a backend database and authentication.
+- All ML computations run in the browser's main thread. For very large datasets (50,000+ billing rows), the UI could become sluggish.
+- No cloud backup means data loss if the browser cache is cleared.
+
+## 29.3 How to Respond to Evaluator Criticism
+
+**"Why not use Python for ML?"**
+> "Python would require a backend server, database, and deployment infrastructure. Our design decision was to keep all computation client-side to eliminate infrastructure costs and data privacy risks. TypeScript ML implementations are fully equivalent for the scale of data we handle — we implemented the same mathematical algorithms (Newsvendor, OLS, ITS) that Python libraries use, just in TypeScript."
+
+**"Why localStorage instead of a database?"**
+> "For our target user — a small restaurant owner with no IT support — setting up a cloud database and user accounts is a barrier to adoption. localStorage gives us zero-cost, zero-setup, instant deployment. The tradeoff is 5MB limit and no multi-device sync, which we accept for this MVP."
+
+**"Is your ML accurate enough?"**
+> "The WMA model shows its accuracy (MAE and RMSE) directly on the Forecast page — users can judge reliability themselves. The Newsvendor model is the same algorithm used by McDonald's and Domino's. The OLS elasticity is standard Wooldridge econometrics. The ITS analysis is used in Cochrane health reviews. All algorithms are theoretically grounded, not ad-hoc."
+
+---
+
+# PART 30: VIVA QUESTIONS AND ANSWERS
+
+## Basic Project Questions
+
+**Q1: What is BusinessIQ?**
+A: BusinessIQ is a full-stack web application that acts as an AI-powered business analyst for small Indian restaurants. It takes billing CSV data, runs 5 ML algorithms entirely in the browser, and provides demand forecasting, wastage reduction, dynamic pricing, workforce planning, and promotion analysis. It also has an AI chat assistant powered by the NVIDIA API.
+
+**Q2: What programming languages did you use?**
+A: TypeScript is the primary language for everything — frontend React components, all 5 ML algorithms, utility functions, and type definitions. The backend server (Express.js) is also TypeScript, run via Node.js. CSS (with Tailwind) handles styling. There is no Python in the project.
+
+**Q3: Why TypeScript instead of Python for ML?**
+A: Python would require a backend server that stays running, a database for storage, and deployment infrastructure. By implementing ML algorithms in TypeScript, everything runs in the user's browser — no server cost, no data leaves the device, and the app works even offline. The mathematical algorithms are identical to their Python equivalents.
+
+**Q4: What is the architecture of the application?**
+A: Single Page Application frontend (React + TypeScript) communicating with a minimal Express.js backend (server.ts). The backend has only two endpoints — both proxy requests to the NVIDIA AI API. All business data is stored in the browser's localStorage. ML algorithms run client-side.
+
+**Q5: How does the application start?**
+A: `npm run dev` runs `npx tsx server.ts`. This starts the Express server on port 3000 and also creates a Vite dev server running as middleware. Both the API endpoints and the React frontend are served from the same port 3000.
+
+**Q6: What is localStorage and why did you use it?**
+A: localStorage is a browser API that stores key-value pairs as strings, persisted across browser sessions, with ~5MB limit. We used it to eliminate the need for a cloud database — data stays on the user's device, there are no hosting costs, and no user account is required. All data is JSON-serialized before storage.
+
+**Q7: How is data structured?**
+A: All data structures are TypeScript interfaces defined in `src/types/index.ts`. The primary data type is `BillingEntry` (one row per dish sale). All analytics derive from arrays of BillingEntry. Menu, restaurant profile, reports, chat messages, and ML results are stored separately under different localStorage keys.
+
+**Q8: How does the routing work?**
+A: React Router DOM v7 handles all routing client-side. Routes are defined in `src/App.tsx`. A `RequireOnboarding` guard redirects to `/` if no restaurant exists in localStorage. All protected routes are wrapped in `AppLayout` which provides the sidebar and topbar.
+
+**Q9: What happens when a user uploads a CSV?**
+A: The file is read using FileReader API, passed to `parseCSV()` in `csvParser.ts`. The parser detects the delimiter, maps column headers using an alias dictionary, normalizes date formats, infers meal periods from time, and processes rows in batches of 500. Results are previewed, then saved to localStorage via `storage.appendBilling()` which deduplicates by row ID.
+
+**Q10: What is the menu engineering matrix?**
+A: A framework from hospitality management (Kasavana & Smith) that classifies dishes into 4 quadrants based on sales volume and profit margin. Stars (high sales + high margin) should be protected. Hidden Gems (low sales + high margin) should be promoted. Volume Traps (high sales + low margin) should be repriced. Dead Weight (low sales + low margin) should be removed.
+
+## Analytics Questions
+
+**Q11: How is food cost percentage calculated?**
+A: `foodCostPct = (rawMaterialCost / totalRevenue) × 100`. Raw material cost is computed by looking up each dish's cost from the menu and multiplying by quantity sold. Industry benchmark is 30% — the dashboard shows it in red if above 35%.
+
+**Q12: How is gross profit calculated?**
+A: `grossProfit = totalRevenue - rawMaterialCost`. This is the contribution before overhead costs (rent, salaries, utilities).
+
+**Q13: How does the weekly comparison work?**
+A: `thisWeek = sum of revenue for last 7 days of DailySummaries`. `lastWeek = sum for the 7 days before that`. `pctChange = (thisWeek - lastWeek) / lastWeek × 100`. Displayed as a green ↑ or red ↓ badge.
+
+**Q14: How are peak hours detected?**
+A: `getPeakHours()` creates a 24-slot array. For each BillingEntry with a `time` field, it parses the hour (e.g., "13:30" → 13) and adds the quantity to that slot. The result is an array of `{hour, orders}` rendered as a bar chart. Only works if the uploaded CSV has a time column.
+
+**Q15: How is meal period inferred without a meal_period column?**
+A: From the time column: 6–10 → breakfast, 11–15 → lunch, 16–22 → dinner, else → other. If there's no time column either, all entries default to "other".
+
+## Forecasting Questions
+
+**Q16: What algorithm is used for forecasting?**
+A: Weighted Moving Average (WMA) with weights [0.4, 0.3, 0.2, 0.1] — most recent first. The key innovation is day-of-week awareness: for predicting next Monday's revenue, we use the last 4 Mondays (not the last 4 days), because restaurants have strong weekly seasonality.
+
+**Q17: What do MAE and RMSE mean?**
+A: MAE (Mean Absolute Error) = average |predicted - actual|. In rupees, it means "on average the model is off by ±₹MAE per day." RMSE (Root Mean Square Error) = √(average of squared errors). RMSE penalizes large errors more. If RMSE >> MAE, occasional very bad predictions exist. Both are computed by backtesting on the last 7 days of known data.
+
+**Q18: How is backtesting done?**
+A: The last 7 days of billing data are held out as a test set. For each test day, predictions are made using only data before that day (no data leakage). Predicted vs actual revenue is compared to compute MAE and RMSE. This simulates how the model would perform in real usage.
+
+**Q19: Why 4 weeks of history for WMA?**
+A: Four weeks provides enough same-weekday data points to compute a weighted average (4 data points with weights 0.4/0.3/0.2/0.1). Using more would reduce the recency effect; using fewer would be insufficiently stable.
+
+## ML Module Questions
+
+**Q20: What is the Newsvendor Model?**
+A: A classic Operations Research model for single-period inventory decisions under uncertain demand. It finds the optimal preparation quantity that balances the cost of over-preparing (food waste) against the cost of under-preparing (lost sales). Used by McDonald's, Domino's, and every major QSR chain.
+
+**Q21: What is the Critical Ratio?**
+A: `CR = Cu / (Cu + Co)` where Cu = underage cost (lost contribution margin) and Co = overage cost (raw material wasted). For a ₹160 Paneer Butter Masala with ₹72 cost: Cu = 160-72=88, Co=72, CR = 88/160 = 0.55. This means prepare enough to satisfy demand with 55% probability.
+
+**Q22: What is the optimal prep quantity formula?**
+A: `Q* = μ + z(CR) × σ` where μ = mean demand forecast, σ = standard deviation of demand, z(CR) = z-score at the critical ratio probability from the normal distribution. This is the textbook Newsvendor formula.
+
+**Q23: How did you implement the Normal inverse CDF without a library?**
+A: Using the Beasley-Springer-Moro algorithm — a rational polynomial approximation accurate to 7 significant figures. The coefficients are hardcoded arrays. It uses different polynomial formulas for the lower tail, central region, and upper tail of the distribution.
+
+**Q24: What is price elasticity of demand?**
+A: `ε = (% change in quantity) / (% change in price)`. If ε = -1.5, a 10% price increase causes a 15% demand decrease. |ε| > 1 means elastic (price-sensitive customers). |ε| < 1 means inelastic (customers buy regardless of price).
+
+**Q25: How is price elasticity estimated?**
+A: Using log-log OLS regression: `ln(quantity) = α + ε × ln(price)`. The slope of this regression equals the elasticity. Since prices rarely change over time in small restaurants, we use cross-sectional variation — comparing average log-quantity vs log-price across all dishes.
+
+**Q26: What is the Lerner markup rule?**
+A: The microeconomics formula for profit-maximizing price: `P* = C × |ε| / (|ε| - 1)` for elastic demand. Derived by setting the derivative of profit with respect to price equal to zero. This is the standard monopoly pricing formula from Wooldridge's Econometrics.
+
+**Q27: What constraints are applied to pricing recommendations?**
+A: Minimum price = `C / (1 - 0.35)` (maintains at least 35% margin). Maximum price = current price × 1.3 (no more than 30% increase). Price rounded to nearest ₹5. Only recommendations with >5% price change are shown.
+
+**Q28: What is Interrupted Time Series analysis?**
+A: An econometric method to measure the causal effect of a policy change (like a promotion) on a time series (like daily revenue). It controls for pre-existing trends by fitting a regression with a trend variable, a level-change variable (D_t = 1 during promotion), and a slope-change variable (time after promotion). The coefficient on D_t is the causal estimate of the promotion effect.
+
+**Q29: Why is ITS better than simple before/after comparison?**
+A: Simple before/after confounds the promotion effect with natural trends. If revenue was already growing 5% per week before the promotion, a simple comparison would incorrectly attribute that growth to the promotion. ITS removes the pre-existing trend (β1×T term) before estimating the promotion effect.
+
+**Q30: How is OLS implemented in promotionAnalyzer.ts?**
+A: From scratch using the normal equations: `β = (X'X)⁻¹ X'Y`. X'X (k×k) and X'Y (k×1) are computed by explicit matrix multiplication. (X'X)⁻¹ is computed using Gauss-Jordan elimination (augmented matrix method). Standard errors come from the diagonal of `σ² × (X'X)⁻¹`.
+
+**Q31: How is the p-value computed?**
+A: A t-statistic is computed: `t = β2 / SE(β2)`. The p-value approximation uses the regularized incomplete Beta function. Significance threshold is p < 0.10 (10% level, appropriate for small sample sizes in restaurant data).
+
+**Q32: What does the Workforce Planning algorithm do?**
+A: For each day-hour combination in the next 7 days, it averages order counts from the same day-of-week and same hour over the last 4 weeks. Festival and weekend boosts are applied. The predicted count is classified into low/medium/high/peak demand bins using data-driven percentile thresholds (P25, P60, P85). Each bin maps to a staffing rule (kitchen + service + cashier counts).
+
+**Q33: What does the Ingredient Forecast do?**
+A: Predicts dish demand for the next 7 days using feature-weighted WMA (with festival, weekend, month-end, and rolling trend adjustments). Multiplies predicted dish quantities by ingredient amounts per serving. Sums across all dishes using each ingredient. Adds 20% safety buffer. Output is a ready-to-use purchase list.
+
+**Q34: What are the feature adjustments in Ingredient Forecast?**
+A: Festival day: +20%, within 2 days of festival: +15%, within 7 days: +8%, weekend: +12%, month-end: +7%. Rolling trend: if 7-day mean > 30-day mean, demand is rising — scale base up proportionally (bounded to 0.7x–1.5x).
+
+**Q35: How are confidence levels determined?**
+A: Based on days of training data: high = ≥60 days, medium = 30–59 days, low = <30 days. More data = more reliable same-weekday WMA averages.
+
+## Design and Architecture Questions
+
+**Q36: What is the design system?**
+A: A centralized set of reusable UI components and CSS variables. `tokens.css` defines all colors, fonts, spacing, and radii as CSS custom properties. `design-system/components/index.tsx` contains Button, Card, Badge, MetricTile, DataTable, EmptyState, Modal, Tooltip, Alert, PageHeader. `design-system/charts/index.tsx` has all chart components.
+
+**Q37: Why CSS custom properties instead of hardcoded colors?**
+A: CSS custom properties (variables) allow the entire visual theme to change by modifying one file. They also enable runtime theming (dark mode could be added by redefining the variables in a `.dark` class). Using `var(--color-unity)` everywhere means changing the brand color requires changing one line.
+
+**Q38: How does the HeatmapChart work?**
+A: It's a custom CSS Grid layout, not a Recharts component. Days form rows, hours form columns. Each cell's background color is computed by `heatmapColor(intensity)` which interpolates between green (low), amber (medium), and red (high) based on `value / maxValue`. Recharts ScatterChart was evaluated but CSS Grid gives better control over cell sizing and color.
+
+**Q39: What is the RAG pattern?**
+A: Retrieval-Augmented Generation. Instead of sending a vague question to the AI, you first retrieve relevant data (the restaurant's actual analytics), attach it to the prompt as context, then ask the AI to reason over it. This prevents hallucination — the AI cannot make up numbers because the real numbers are provided.
+
+**Q40: How does the chat maintain conversation context?**
+A: The last 10 messages are included in every API call as a messages array: `[{role:'system', content: systemPrompt}, ...last10messages]`. This gives the AI memory of recent exchanges. Older messages are dropped to stay within the 8192 token limit.
+
+**Q41: Why is the NVIDIA API called server-side, not client-side?**
+A: The NVIDIA API key must never be exposed in browser JavaScript — it would be visible in DevTools and could be stolen. The Express server holds the key in an environment variable, making the API call server-side, and the browser never sees the key.
+
+**Q42: What is the AppShell component?**
+A: The layout wrapper used by all protected pages. It renders the collapsible sidebar and fixed topbar, then wraps children in a `<main>` with appropriate padding and margin to account for the sidebar width. The sidebar width transition (`0.2s`) is applied to `marginLeft` on the content area.
+
+**Q43: What hooks does the application use?**
+A: `useState` for local component state, `useMemo` for expensive computations (all ML module results), `useEffect` for side effects (loading initial menu data, auto-scrolling chat), `useRef` for DOM references (file input, chat scroll), `useNavigate` for programmatic navigation, `useLocation` for active route detection.
+
+**Q44: Why useMemo for ML computations?**
+A: ML algorithms (especially Newsvendor and OLS) involve significant computation. `useMemo` caches the result and only recomputes when the dependency (billing, menu) changes. Without it, the algorithm would re-run on every render — potentially causing noticeable lag on large datasets.
+
+## Practical Implementation Questions
+
+**Q45: How does drag-and-drop file upload work?**
+A: Three event handlers on the drop zone div: `onDragOver` (prevents default browser behavior, sets `dragging` state), `onDragLeave` (resets state), `onDrop` (reads `e.dataTransfer.files[0]`). The file is read as text using `FileReader.readAsText()`, then passed to `parseCSV()`.
+
+**Q46: How does the sample data work?**
+A: `generateSampleCSV()` in `csvParser.ts` creates 30 days of synthetic billing data for 7 predefined Indian dishes (Dal Fry, Paneer Butter Masala, Veg Thali, etc.) with realistic prices. It generates 3 meal periods per day with random dish selection and quantities. The output is a CSV string that the upload page processes identically to a real upload.
+
+**Q47: How is currency formatted throughout the app?**
+A: Using `Intl.NumberFormat` via `toLocaleString('en-IN')`: `₹${Math.round(n).toLocaleString('en-IN')}`. This formats 324000 as ₹3,24,000 (Indian numbering system with lakh separators).
+
+**Q48: How does the promotion log → analysis flow work?**
+A: User enters promotion details (name, dates, type, discount %) in a modal. It's saved to `biq_promotions` via `storage.addPromotion()`. Selecting a promotion in the list triggers `analyzePromotion(billing, selectedPromo)` via `useMemo`. The ITS regression runs on billing data for dates around the promotion period.
+
+**Q49: What happens if the NVIDIA API is down?**
+A: `callAI()` in `aiClient.ts` catches errors and returns `{ text: '', error: errorMessage }`. In ReportPage, the report text becomes "Could not generate AI report: [error]". In ChatPage, the assistant message says "Sorry, I couldn't connect to the AI: [error]". The rest of the app (all ML modules, analytics) continues working normally.
+
+**Q50: How is the sidebar active state determined?**
+A: `const active = pathname === to || (to !== '/dashboard' && pathname.startsWith(to))`. The special case for `/dashboard` prevents it from matching `/dashboard/something` but the `/ml` prefix correctly highlights any `/ml/*` page.
+
+**Q51: How does applying a pricing recommendation work?**
+A: `applyRecommendation(rec)` reads the current menu from localStorage, maps over it to find the matching dish by `dishId`, updates `sellingPrice` to `recommendedPrice`, and saves back. The `appliedIds` state Set tracks which dishes have been applied in the current session to show "Applied" instead of "Review".
+
+**Q52: What is the deduplication logic for billing uploads?**
+A: Each `BillingEntry` gets an ID of `${date}-${dishName}-${rowIndex}`. When `appendBilling()` is called, it builds a `Set` of existing IDs. New entries with IDs already in the set are filtered out. This means re-uploading the same CSV file is completely safe.
+
+**Q53: How are the OLS matrix operations verified to be correct?**
+A: The Gaussian elimination `invertMatrix()` function returns `null` if the matrix is singular (determinant near zero), which safely aborts the analysis. The `rSquared` value returned by `ols()` serves as a quality check — the promotion analysis displays `R² = X` in the subtitle so the user can judge model fit.
+
+**Q54: What is the minimum data requirement for each ML module?**
+A: Forecasting: 7 days minimum. Wastage Predictor: 14 days minimum, 7 per dish. Dynamic Pricing: 7 days per dish for OLS (falls back to assumed elasticity otherwise). Ingredient Forecast: no minimum but more data = higher confidence. Workforce Planning: no minimum (uses fallback daily distribution if no time data). Promotion Analysis: 14 days before + 2 days of promotion.
+
+**Q55: How does the ingredient forecast handle dishes with no sales history?**
+A: `predictDishDemand()` returns `{ predicted: 0, std: 0 }` if there are no same-weekday historical values. Such dishes contribute 0 to the ingredient totals. The forecast only includes ingredients from dishes with actual sales data.
+
+**Q56: What are the 9 localStorage keys and what do they store?**
+A: `biq_restaurant` (Restaurant object), `biq_menu` (MenuItem[]), `biq_billing` (BillingEntry[]), `biq_reports` (Report[], max 30), `biq_chat` (ChatMessage[], max 100), `biq_ingredient_mappings` (IngredientMapping[]), `biq_wastage_log` (WastagePrediction[], max 500), `biq_pricing_recs` (PricingRecommendation[]), `biq_promotions` (PromotionRecord[]).
+
+**Q57: How does the trend calculation in wastage analysis work?**
+A: For each dish, compare `rMean` (average daily quantity in last 14 days) vs `pMean` (average in previous 14 days). If `rMean > pMean × 1.05` → trend is "improving" (demand rising means less relative waste). If `rMean < pMean × 0.95` → "worsening". Otherwise → "stable".
+
+**Q58: What is the Vite build configuration?**
+A: `vite.config.ts` uses two plugins: `@vitejs/plugin-react` (JSX transform) and `@tailwindcss/vite` (Tailwind CSS processing). Path alias `@` maps to the project root. HMR (Hot Module Replacement) can be disabled via `DISABLE_HMR=true` environment variable.
+
+**Q59: How would you scale this application?**
+A: Replace localStorage with a PostgreSQL database (using Prisma ORM). Add user authentication (JWT or session-based). Move ML computations to a Python backend (FastAPI) for better performance on large datasets. Add multi-restaurant support with organization accounts. Deploy on AWS/GCP with a managed database.
+
+**Q60: What security improvements would you make?**
+A: Add HTTPS enforcement, rate limiting on AI endpoints (express-rate-limit), input sanitization for CSV uploads (already done via type coercion), Content Security Policy headers, and if adding user accounts: bcrypt password hashing, JWT with short expiry, and HTTPS-only cookies.
+
+---
+
+# PART 31: PROJECT DEFENSE GUIDE
+
+## 31.1 Two-Minute Explanation
+"BusinessIQ is a web application that acts as an AI business analyst for small Indian restaurants. The owner uploads their billing CSV, and the app immediately gives them a full analytics dashboard — revenue trends, top dishes, food cost percentage. Then five machine learning algorithms run automatically: the Newsvendor model predicts how much food to prepare to minimize waste, OLS regression estimates price elasticity and recommends optimal prices, feature-weighted forecasting predicts ingredient purchase quantities, a workforce planning algorithm recommends staffing levels for each hour, and Interrupted Time Series analysis measures whether promotions are actually profitable. There's also an AI chat assistant powered by NVIDIA's LLM that can answer any natural language question about the restaurant's data. All of this runs in the browser — no cloud database, no server-side storage, zero infrastructure cost."
+
+## 31.2 Five-Minute Explanation
+Add to the above:
+"The entire ML stack is implemented in TypeScript, running client-side in the browser. We made this decision specifically to eliminate infrastructure costs and data privacy concerns — the restaurant's sensitive revenue data never leaves their device. The only external API call is to NVIDIA's NIM service for the AI reports and chat.
+
+The technical stack is React 19 with TypeScript for the frontend, Express.js as a minimal backend server with two AI endpoints, and localStorage as the persistence layer. The design system uses CSS custom properties for theming, Recharts for charts, and a custom CSS Grid heatmap for the workforce planning visualization.
+
+For the ML implementations: the Newsvendor model uses the Beasley-Springer-Moro normal inverse CDF approximation since there's no math library available in-browser. The price elasticity model implements OLS regression from scratch including matrix inversion via Gaussian elimination. The promotion analysis implements the full Interrupted Time Series regression with t-statistics and p-values. These are all theoretically grounded — Newsvendor is standard OR textbook material, OLS elasticity is from Wooldridge's Econometrics, and ITS is used in Cochrane systematic reviews."
+
+## 31.3 Ten-Minute Explanation
+Add detailed walkthroughs of each ML algorithm, the data flow from CSV upload to dashboard, the RAG pattern for AI reports, the design system architecture, and the limitations/future work outlined in Part 29.
+
+---
+
+*End of BusinessIQ Technical Reference Manual*
+*Document covers: 2 phases of development, 27 source files, 5 ML algorithms, 11 pages, 1 backend server, 1 AI integration*
+*Total lines of production code: ~5,300*
+

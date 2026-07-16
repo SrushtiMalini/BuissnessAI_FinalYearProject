@@ -4,7 +4,7 @@ import { Send, Bot, User, Trash2, Upload } from 'lucide-react';
 import { storage } from '../lib/storage';
 import { buildReportContext } from '../lib/reportGenerator';
 import { callAI } from '../lib/aiClient';
-import { Button, Card, PageHeader } from '../components/ui';
+import { Button, Card, EmptyState } from '../design-system/components';
 import type { ChatMessage } from '../types';
 
 const SUGGESTED = [
@@ -31,11 +31,13 @@ export default function ChatPage() {
 
   if (!billing.length) {
     return (
-      <div className="max-w-lg mx-auto text-center py-20">
-        <Upload size={48} className="text-gray-600 mx-auto mb-4" />
-        <h2 className="text-white font-semibold text-xl mb-2">No data yet</h2>
-        <p className="text-gray-400 mb-6">Upload billing data to chat with your AI analyst.</p>
-        <Link to="/upload" className="bg-[#4ADE80] text-[#0D1117] px-5 py-2 rounded-lg font-medium text-sm">Upload Data</Link>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <EmptyState
+          icon={<Upload size={40} />}
+          title="No data yet"
+          description="Upload billing data to chat with your AI analyst."
+          action={<Link to="/upload"><Button>Upload Data</Button></Link>}
+        />
       </div>
     );
   }
@@ -57,10 +59,7 @@ export default function ChatPage() {
       ...updated.slice(-10).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     ];
 
-    const result = await callAI('/api/ai/chat', {
-      context: systemPrompt,
-      messages: aiMessages,
-    });
+    const result = await callAI('/api/ai/chat', { context: systemPrompt, messages: aiMessages });
 
     const assistantMsg: ChatMessage = {
       id: (Date.now() + 1).toString(),
@@ -79,42 +78,41 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-5rem)]">
-      <div className="flex items-center justify-between mb-4">
-        <PageHeader
-          title="AI Analyst"
-          subtitle={`Ask anything about ${restaurant?.name ?? 'your restaurant'}'s data`}
-        />
+    <div className="max-w-3xl mx-auto flex flex-col" style={{ height: 'calc(100vh - 5rem)' }}>
+      <div className="flex items-center justify-between mb-4 shrink-0">
+        <div>
+          <h1 className="text-[var(--text-2xl)] font-semibold text-[var(--color-text-primary)]">AI Analyst</h1>
+          <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] mt-0.5">
+            Ask anything about {restaurant?.name ?? 'your restaurant'}'s data
+          </p>
+        </div>
         {messages.length > 0 && (
-          <Button variant="danger" size="sm" onClick={clearChat}>
+          <Button variant="ghost" size="sm" onClick={clearChat}>
             <Trash2 size={13} /> Clear
           </Button>
         )}
       </div>
 
-      <Card className="flex-1 overflow-y-auto mb-4 min-h-0">
+      <div className="flex-1 overflow-y-auto mb-4 min-h-0 bg-[var(--color-bg-card)] border border-[var(--color-border-default)] rounded-[var(--radius-lg)] p-5">
         {messages.length === 0 && (
           <div>
             <div className="flex items-start gap-3 mb-6">
-              <div className="w-8 h-8 rounded-full bg-[#4ADE80]/10 flex items-center justify-center shrink-0">
-                <Bot size={16} className="text-[#4ADE80]" />
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: 'var(--color-info-light)' }}>
+                <Bot size={16} style={{ color: 'var(--color-unity)' }} />
               </div>
-              <div className="bg-[#0D1117] rounded-xl rounded-tl-sm px-4 py-3 max-w-lg">
-                <p className="text-gray-300 text-sm">
+              <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-lg)] rounded-tl-sm px-4 py-3 max-w-lg">
+                <p className="text-[var(--text-sm)] text-[var(--color-text-secondary)] leading-relaxed">
                   Hi! I'm your AI business analyst. I have access to all of {restaurant?.name ?? 'your restaurant'}'s data.
                   Ask me anything — which dishes make the most profit, why revenue dropped last week, what to prepare tomorrow, or anything else.
                 </p>
               </div>
             </div>
             <div>
-              <p className="text-gray-500 text-xs mb-3">Suggested questions:</p>
+              <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mb-3 uppercase tracking-wider">Suggested questions</p>
               <div className="flex flex-wrap gap-2">
                 {SUGGESTED.map(q => (
-                  <button
-                    key={q}
-                    onClick={() => sendMessage(q)}
-                    className="text-xs bg-[#0D1117] border border-[#30363D] text-gray-300 px-3 py-1.5 rounded-full hover:border-[#4ADE80] hover:text-[#4ADE80] transition-colors"
-                  >
+                  <button key={q} onClick={() => sendMessage(q)}
+                    className="text-[var(--text-xs)] bg-[var(--color-bg-primary)] border border-[var(--color-border-default)] text-[var(--color-text-secondary)] px-3 py-1.5 rounded-full hover:border-[var(--color-unity)] hover:text-[var(--color-unity)] transition-colors">
                     {q}
                   </button>
                 ))}
@@ -126,13 +124,17 @@ export default function ChatPage() {
         <div className="space-y-4">
           {messages.map(msg => (
             <div key={msg.id} className={`flex items-start gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-[#4ADE80]/10' : 'bg-[#60A5FA]/10'}`}>
-                {msg.role === 'user' ? <User size={15} className="text-[#4ADE80]" /> : <Bot size={15} className="text-[#60A5FA]" />}
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                msg.role === 'user' ? 'bg-[var(--color-info-light)]' : 'bg-[var(--color-bg-secondary)]'
+              }`}>
+                {msg.role === 'user'
+                  ? <User size={15} style={{ color: 'var(--color-unity)' }} />
+                  : <Bot size={15} style={{ color: 'var(--color-text-muted)' }} />}
               </div>
-              <div className={`rounded-xl px-4 py-3 max-w-lg text-sm leading-relaxed ${
+              <div className={`rounded-[var(--radius-lg)] px-4 py-3 max-w-lg text-[var(--text-sm)] leading-relaxed ${
                 msg.role === 'user'
-                  ? 'bg-[#4ADE80]/10 text-white rounded-tr-sm'
-                  : 'bg-[#0D1117] text-gray-300 rounded-tl-sm'
+                  ? 'bg-[var(--color-unity)] text-[var(--color-text-inverse)] rounded-tr-sm'
+                  : 'bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)] rounded-tl-sm'
               }`}>
                 {msg.content}
               </div>
@@ -141,13 +143,14 @@ export default function ChatPage() {
 
           {loading && (
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#60A5FA]/10 flex items-center justify-center shrink-0">
-                <Bot size={15} className="text-[#60A5FA]" />
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-[var(--color-bg-secondary)]">
+                <Bot size={15} style={{ color: 'var(--color-text-muted)' }} />
               </div>
-              <div className="bg-[#0D1117] rounded-xl rounded-tl-sm px-4 py-3">
+              <div className="bg-[var(--color-bg-primary)] rounded-[var(--radius-lg)] rounded-tl-sm px-4 py-3">
                 <div className="flex gap-1.5">
                   {[0, 1, 2].map(i => (
-                    <div key={i} className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                    <div key={i} className="w-2 h-2 rounded-full animate-bounce bg-[var(--color-text-muted)]"
+                      style={{ animationDelay: `${i * 0.15}s` }} />
                   ))}
                 </div>
               </div>
@@ -155,16 +158,16 @@ export default function ChatPage() {
           )}
           <div ref={bottomRef} />
         </div>
-      </Card>
+      </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 shrink-0">
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(input)}
           placeholder="Ask anything about your business..."
-          className="flex-1 bg-[#161B22] border border-[#30363D] rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#4ADE80] placeholder-gray-600"
           disabled={loading}
+          className="flex-1 bg-[var(--color-bg-card)] border border-[var(--color-border-default)] rounded-[var(--radius-xl)] px-4 py-3 text-[var(--text-sm)] text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-border-focus)] placeholder:text-[var(--color-text-muted)] transition-colors"
         />
         <Button onClick={() => sendMessage(input)} disabled={!input.trim()} loading={loading} className="shrink-0">
           <Send size={15} />

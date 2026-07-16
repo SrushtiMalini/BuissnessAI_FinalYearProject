@@ -24,10 +24,10 @@ export interface BillingEntry {
 }
 
 export interface MenuQuadrant {
-  star: MenuItem[];       // high sales, high margin
-  hiddenGem: MenuItem[];  // low sales, high margin
-  volumeTrap: MenuItem[]; // high sales, low margin
-  deadWeight: MenuItem[]; // low sales, low margin
+  star: MenuItem[];
+  hiddenGem: MenuItem[];
+  volumeTrap: MenuItem[];
+  deadWeight: MenuItem[];
 }
 
 export interface DailySummary {
@@ -72,4 +72,71 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+}
+
+// ─── ML Types ───────────────────────────────────────────────────────────────
+
+export interface IngredientMapping {
+  dishId: string;
+  dishName: string;
+  ingredients: { name: string; quantityPerServing: number; unit: string }[];
+}
+
+export interface IngredientForecast {
+  ingredientName: string;
+  unit: string;
+  dailyForecasts: { date: string; predicted: number; lower: number; upper: number }[];
+  totalNeeded: number;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface WastagePrediction {
+  dishName: string;
+  date: string;
+  predictedWasteQty: number;
+  predictedWasteRupees: number;
+  recommendedPrepQty: number;
+  usualPrepQty: number;
+  estimatedSaving: number;
+  confidence: 'high' | 'medium' | 'low';
+  preventionAction: string;
+}
+
+export interface PricingRecommendation {
+  dishId: string;
+  dishName: string;
+  currentPrice: number;
+  recommendedPrice: number;
+  elasticity: number;
+  projectedRevenueChangePct: number;
+  projectedDemandChangePct: number;
+  confidence: 'high' | 'medium' | 'low';
+  reasoning: string;
+  isApplied: boolean;
+}
+
+export interface WorkforceRecommendation {
+  date: string;
+  hour: number;
+  predictedOrders: number;
+  demandBin: 'low' | 'medium' | 'high' | 'peak';
+  recommendedStaff: { kitchen: number; service: number; cashier: number };
+  shiftLabel: string;
+}
+
+export interface PromotionRecord {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  type: 'discount' | 'combo' | 'festival' | 'flat';
+  discountValue: number;
+  affectedDishes: string[];
+  revenueImpactPct?: number;
+  orderVolumeImpactPct?: number;
+  profitabilityImpactPct?: number;
+  pValue?: number;
+  recommendation?: string;
+  naturalLanguageFinding?: string;
+  analyzedAt?: string;
 }

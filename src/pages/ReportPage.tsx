@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, RefreshCw, Sun, Moon, Upload } from 'lucide-react';
+import { Sun, Moon, Upload, FileText } from 'lucide-react';
 import { storage } from '../lib/storage';
 import { generateDailyReport } from '../lib/reportGenerator';
 import { getDailySummaries } from '../lib/analytics';
-import { Button, Card, Badge, PageHeader } from '../components/ui';
+import { Button, Card, Badge, EmptyState, PageHeader, MetricTile } from '../design-system/components';
 import type { Report } from '../types';
 
 function fmtCurrency(n: number): string {
@@ -20,11 +20,13 @@ export default function ReportPage() {
 
   if (!billing.length) {
     return (
-      <div className="max-w-lg mx-auto text-center py-20">
-        <Upload size={48} className="text-gray-600 mx-auto mb-4" />
-        <h2 className="text-white font-semibold text-xl mb-2">No data yet</h2>
-        <p className="text-gray-400 mb-6">Upload billing data to generate reports.</p>
-        <Link to="/upload" className="bg-[#4ADE80] text-[#0D1117] px-5 py-2 rounded-lg font-medium text-sm">Upload Data</Link>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <EmptyState
+          icon={<Upload size={40} />}
+          title="No data yet"
+          description="Upload billing data to generate AI-powered reports."
+          action={<Link to="/upload"><Button>Upload Data</Button></Link>}
+        />
       </div>
     );
   }
@@ -57,45 +59,47 @@ export default function ReportPage() {
       <PageHeader
         title="Business Reports"
         subtitle="AI-generated reports using RAG — grounded in your actual restaurant data"
+        action={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => generateReport('morning')} loading={generating === 'morning'}>
+              <Sun size={14} /> Morning Brief
+            </Button>
+            <Button onClick={() => generateReport('evening')} loading={generating === 'evening'}>
+              <Moon size={14} /> Evening Report
+            </Button>
+          </div>
+        }
       />
 
-      <div className="flex gap-3 mb-6">
-        <Button onClick={() => generateReport('morning')} loading={generating === 'morning'} variant="secondary">
-          <Sun size={15} /> Morning Brief
-        </Button>
-        <Button onClick={() => generateReport('evening')} loading={generating === 'evening'}>
-          <Moon size={15} /> Generate Evening Report
-        </Button>
-      </div>
-
       {lastSummary && (
-        <Card title="Latest Day Summary" className="mb-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="mb-6">
+          <p className="text-[var(--text-xs)] uppercase tracking-wider text-[var(--color-text-muted)] mb-4 font-medium">Latest Day — {lastSummary.date}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div>
-              <p className="text-gray-400 text-xs">Revenue</p>
-              <p className="text-[#4ADE80] font-bold text-lg">{fmtCurrency(lastSummary.totalRevenue)}</p>
+              <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mb-1">Revenue</p>
+              <p className="font-semibold text-[var(--text-xl)] text-[var(--color-text-accent)]">{fmtCurrency(lastSummary.totalRevenue)}</p>
             </div>
             <div>
-              <p className="text-gray-400 text-xs">Orders</p>
-              <p className="text-white font-bold text-lg">{lastSummary.totalOrders}</p>
+              <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mb-1">Orders</p>
+              <p className="font-semibold text-[var(--text-xl)] text-[var(--color-text-primary)]">{lastSummary.totalOrders}</p>
             </div>
             <div>
-              <p className="text-gray-400 text-xs">Gross Profit</p>
-              <p className="text-white font-bold text-lg">{fmtCurrency(lastSummary.grossProfit)}</p>
+              <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mb-1">Gross Profit</p>
+              <p className="font-semibold text-[var(--text-xl)] text-[var(--color-text-primary)]">{fmtCurrency(lastSummary.grossProfit)}</p>
             </div>
             <div>
-              <p className="text-gray-400 text-xs">Food Cost</p>
-              <p className={`font-bold text-lg ${lastSummary.foodCostPct > 35 ? 'text-red-400' : 'text-white'}`}>
+              <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mb-1">Food Cost</p>
+              <p className={`font-semibold text-[var(--text-xl)] ${lastSummary.foodCostPct > 35 ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-primary)]'}`}>
                 {lastSummary.foodCostPct.toFixed(1)}%
               </p>
             </div>
           </div>
           {lastSummary.topDishes.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-[#30363D]">
-              <p className="text-gray-400 text-xs mb-2">Top dishes</p>
+            <div className="mt-4 pt-4 border-t border-[var(--color-border-default)]">
+              <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mb-2">Top dishes</p>
               <div className="flex flex-wrap gap-2">
                 {lastSummary.topDishes.map(d => (
-                  <Badge key={d.name} variant="green">{d.name} ({d.quantity})</Badge>
+                  <Badge key={d.name} variant="info">{d.name} ({d.quantity})</Badge>
                 ))}
               </div>
             </div>
@@ -106,10 +110,12 @@ export default function ReportPage() {
       {generating && (
         <Card className="mb-4">
           <div className="flex items-center gap-3">
-            <RefreshCw size={16} className="text-[#4ADE80] animate-spin" />
+            <div className="w-5 h-5 border-2 border-[var(--color-unity)] border-t-transparent rounded-full animate-spin" />
             <div>
-              <p className="text-white text-sm font-medium">Generating {generating === 'morning' ? 'Morning Brief' : 'Evening Report'}...</p>
-              <p className="text-gray-500 text-xs">AI is analysing your restaurant data via RAG</p>
+              <p className="font-medium text-[var(--text-sm)] text-[var(--color-text-primary)]">
+                Generating {generating === 'morning' ? 'Morning Brief' : 'Evening Report'}...
+              </p>
+              <p className="text-[var(--text-xs)] text-[var(--color-text-muted)]">AI is analysing your restaurant data via RAG</p>
             </div>
           </div>
         </Card>
@@ -117,10 +123,11 @@ export default function ReportPage() {
 
       {reports.length === 0 && !generating && (
         <Card>
-          <div className="text-center py-8">
-            <FileText size={40} className="text-gray-600 mx-auto mb-3" />
-            <p className="text-gray-400 text-sm">No reports generated yet. Click a button above to generate your first report.</p>
-          </div>
+          <EmptyState
+            icon={<FileText size={36} />}
+            title="No reports yet"
+            description="Generate your first morning brief or evening report using the buttons above."
+          />
         </Card>
       )}
 
@@ -129,19 +136,24 @@ export default function ReportPage() {
           <Card key={report.id}>
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-2">
-                {report.type === 'morning' ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} className="text-blue-400" />}
-                <span className="text-white font-semibold text-sm">
+                {report.type === 'morning'
+                  ? <Sun size={16} style={{ color: 'var(--color-sunburst)' }} />
+                  : <Moon size={16} style={{ color: 'var(--color-unity)' }} />
+                }
+                <span className="font-semibold text-[var(--text-sm)] text-[var(--color-text-primary)]">
                   {report.type === 'morning' ? 'Morning Brief' : 'Evening Report'}
                 </span>
-                <Badge variant={report.type === 'morning' ? 'amber' : 'blue'}>{report.date}</Badge>
+                <Badge variant={report.type === 'morning' ? 'warning' : 'info'}>{report.date}</Badge>
               </div>
-              <span className="text-gray-500 text-xs">{new Date(report.generatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+              <span className="text-[var(--text-xs)] text-[var(--color-text-muted)]">
+                {new Date(report.generatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
             </div>
-            <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{report.aiText}</p>
-            <div className="flex gap-4 mt-3 pt-3 border-t border-[#30363D]">
-              <span className="text-gray-500 text-xs">Revenue: {fmtCurrency(report.summary.totalRevenue)}</span>
-              <span className="text-gray-500 text-xs">Orders: {report.summary.totalOrders}</span>
-              <span className="text-gray-500 text-xs">Food Cost: {report.summary.foodCostPct.toFixed(1)}%</span>
+            <p className="text-[var(--text-sm)] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap">{report.aiText}</p>
+            <div className="flex gap-4 mt-3 pt-3 border-t border-[var(--color-border-default)]">
+              <span className="text-[var(--text-xs)] text-[var(--color-text-muted)]">Revenue: {fmtCurrency(report.summary.totalRevenue)}</span>
+              <span className="text-[var(--text-xs)] text-[var(--color-text-muted)]">Orders: {report.summary.totalOrders}</span>
+              <span className="text-[var(--text-xs)] text-[var(--color-text-muted)]">Food Cost: {report.summary.foodCostPct.toFixed(1)}%</span>
             </div>
           </Card>
         ))}

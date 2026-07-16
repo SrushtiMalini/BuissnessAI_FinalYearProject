@@ -1,4 +1,8 @@
-import type { Restaurant, MenuItem, BillingEntry, Report, ChatMessage } from '../types';
+import type {
+  Restaurant, MenuItem, BillingEntry, Report, ChatMessage,
+  IngredientMapping, WastagePrediction, PricingRecommendation,
+  PromotionRecord,
+} from '../types';
 
 const KEYS = {
   restaurant: 'biq_restaurant',
@@ -6,6 +10,10 @@ const KEYS = {
   billing: 'biq_billing',
   reports: 'biq_reports',
   chat: 'biq_chat',
+  ingredientMappings: 'biq_ingredient_mappings',
+  wastageLog: 'biq_wastage_log',
+  pricingRecs: 'biq_pricing_recs',
+  promotions: 'biq_promotions',
 } as const;
 
 function get<T>(key: string): T | null {
@@ -31,7 +39,6 @@ export const storage = {
   getBilling: (): BillingEntry[] => get<BillingEntry[]>(KEYS.billing) ?? [],
   appendBilling: (entries: BillingEntry[]) => {
     const existing = get<BillingEntry[]>(KEYS.billing) ?? [];
-    // Deduplicate by id
     const existingIds = new Set(existing.map(e => e.id));
     const newEntries = entries.filter(e => !existingIds.has(e.id));
     set(KEYS.billing, [...existing, ...newEntries]);
@@ -42,15 +49,50 @@ export const storage = {
   getReports: (): Report[] => get<Report[]>(KEYS.reports) ?? [],
   appendReport: (report: Report) => {
     const existing = get<Report[]>(KEYS.reports) ?? [];
-    set(KEYS.reports, [report, ...existing].slice(0, 30)); // keep last 30
+    set(KEYS.reports, [report, ...existing].slice(0, 30));
   },
 
   getChat: (): ChatMessage[] => get<ChatMessage[]>(KEYS.chat) ?? [],
   appendChat: (msg: ChatMessage) => {
     const existing = get<ChatMessage[]>(KEYS.chat) ?? [];
-    set(KEYS.chat, [...existing, msg].slice(-100)); // keep last 100 messages
+    set(KEYS.chat, [...existing, msg].slice(-100));
   },
   clearChat: () => localStorage.removeItem(KEYS.chat),
 
+  // ML: Ingredient mappings
+  getIngredientMappings: (): IngredientMapping[] =>
+    get<IngredientMapping[]>(KEYS.ingredientMappings) ?? [],
+  setIngredientMappings: (mappings: IngredientMapping[]) =>
+    set(KEYS.ingredientMappings, mappings),
+
+  // ML: Wastage log (actuals)
+  getWastageLog: (): WastagePrediction[] =>
+    get<WastagePrediction[]>(KEYS.wastageLog) ?? [],
+  appendWastageLog: (entry: WastagePrediction) => {
+    const existing = get<WastagePrediction[]>(KEYS.wastageLog) ?? [];
+    set(KEYS.wastageLog, [...existing, entry].slice(-500));
+  },
+
+  // ML: Pricing recommendations
+  getPricingRecs: (): PricingRecommendation[] =>
+    get<PricingRecommendation[]>(KEYS.pricingRecs) ?? [],
+  setPricingRecs: (recs: PricingRecommendation[]) => set(KEYS.pricingRecs, recs),
+
+  // ML: Promotions
+  getPromotions: (): PromotionRecord[] =>
+    get<PromotionRecord[]>(KEYS.promotions) ?? [],
+  setPromotions: (promos: PromotionRecord[]) => set(KEYS.promotions, promos),
+  addPromotion: (promo: PromotionRecord) => {
+    const existing = get<PromotionRecord[]>(KEYS.promotions) ?? [];
+    set(KEYS.promotions, [...existing, promo]);
+  },
+  updatePromotion: (promo: PromotionRecord) => {
+    const existing = get<PromotionRecord[]>(KEYS.promotions) ?? [];
+    set(KEYS.promotions, existing.map(p => p.id === promo.id ? promo : p));
+  },
+
   clearAll: () => Object.values(KEYS).forEach(k => localStorage.removeItem(k)),
 };
+
+// Re-export type for convenience
+export type { IngredientMapping };

@@ -1,0 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  /* Core Brand */
+  --color-unity: #5B6B4A;
+  --color-relief: #8B9B7A;
+  --color-sunburst: #E8A830;
+  --color-whitewashed: #F5F2EC;
+  --color-carbon: #2C2C2C;
+
+  /* Surfaces */
+  --color-bg-primary: #F5F2EC;
+  --color-bg-secondary: #ECEAE3;
+  --color-bg-card: #FFFFFF;
+  --color-bg-dark: #2C2C2C;
+  --color-bg-sidebar: #1E2218;
+
+  /* Text */
+  --color-text-primary: #2C2C2C;
+  --color-text-secondary: #5C5C5C;
+  --color-text-muted: #8C8C8C;
+  --color-text-inverse: #F5F2EC;
+  --color-text-accent: #5B6B4A;
+
+  /* Borders */
+  --color-border-default: #E0DDD6;
+  --color-border-strong: #C8C4BB;
+  --color-border-focus: #5B6B4A;
+
+  /* Semantic */
+  --color-success: #4A7C59;
+  --color-success-light: #EBF4EE;
+  --color-warning: #E8A830;
+  --color-warning-light: #FDF5E6;
+  --color-danger: #C0392B;
+  --color-danger-light: #FBEAEA;
+  --color-info: #5B6B4A;
+  --color-info-light: #EEF1EB;
+
+  /* Chart palette — use in order */
+  --chart-1: #5B6B4A;
+  --chart-2: #E8A830;
+  --chart-3: #8B9B7A;
+  --chart-4: #C0392B;
+  --chart-5: #2C7A5C;
+  --chart-6: #D4A017;
+
+  /* Typography */
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+
+  /* Type scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(44,44,44,0.06);
+  --shadow-md: 0 4px 6px rgba(44,44,44,0.08), 0 1px 3px rgba(44,44,44,0.06);
+  --shadow-lg: 0 10px 15px rgba(44,44,44,0.08), 0 4px 6px rgba(44,44,44,0.05);
+}

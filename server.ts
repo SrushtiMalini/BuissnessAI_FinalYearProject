@@ -11,6 +11,8 @@ const __dirname = path.dirname(__filename);
 
 const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const NVIDIA_MODEL = "minimaxai/minimax-m3";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_MODEL = "groq/llama-3.1-8b-instant";
 
 async function callNvidia(messages: { role: string; content: string }[]): Promise<string> {
   const key = process.env.NVIDIA_API_KEY;
@@ -41,6 +43,40 @@ async function callNvidia(messages: { role: string; content: string }[]): Promis
   return data.choices?.[0]?.message?.content ?? "";
 }
 
+async function callGroq(messages: { role: string; content: string }[]): Promise<string> {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new Error("GROQ_API_KEY is not configured on the server.");
+
+  const response = await fetch(GROQ_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages,
+      temperature: 1.0,
+      top_p: 0.95,
+      max_tokens: 8192,
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Groq API error ${response.status}: ${errText}`);
+  }
+
+  const data = await response.json() as any;
+  return data.choices?.[0]?.message?.content ?? "";
+}
+
+async function callAI(messages: { role: string; content: string }[]): Promise<string> {
+  if (process.env.NVIDIA_API_KEY) return callNvidia(messages);
+  return callGroq(messages);
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -53,7 +89,7 @@ async function startServer() {
       const { context } = req.body as { context: string };
       if (!context) return res.status(400).json({ error: "context is required" });
 
-      const text = await callNvidia([{ role: "user", content: context }]);
+      const text = await callAI([{ role: "user", content: context }]);
       res.json({ text });
     } catch (err: any) {
       console.error("Report AI error:", err.message);
@@ -67,7 +103,7 @@ async function startServer() {
       const { messages } = req.body as { messages: { role: string; content: string }[] };
       if (!messages?.length) return res.status(400).json({ error: "messages is required" });
 
-      const text = await callNvidia(messages);
+      const text = await callAI(messages);
       res.json({ text });
     } catch (err: any) {
       console.error("Chat AI error:", err.message);

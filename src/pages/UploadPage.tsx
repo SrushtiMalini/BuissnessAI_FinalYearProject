@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Upload, FileText, CheckCircle, AlertCircle, Download } from 'lucide-react';
 import { parseCSV, generateSampleCSV, type ParseProgress } from '../lib/csvParser';
 import { storage } from '../lib/storage';
+import { buildMenuFromBilling } from '../lib/menuEngine';
 import { Button, Card, PageHeader } from '../components/ui';
 import type { BillingEntry } from '../types';
 
@@ -50,7 +51,13 @@ export default function UploadPage() {
 
   function saveAndContinue() {
     if (!result?.entries.length) return;
-    const added = storage.appendBilling(result.entries);
+    const ok = storage.setBilling(result.entries);
+    if (!ok) {
+      setError('Browser storage limit was exceeded.');
+      return;
+    }
+    const menu = buildMenuFromBilling(result.entries, []);
+    storage.setMenu(menu);
     setSaved(true);
     setTimeout(() => navigate('/menu'), 800);
   }

@@ -145,7 +145,7 @@ export function MetricTile({ label, value, valueFont = 'body', change, changeLab
 interface Column<T> {
   key: keyof T | string;
   header: string;
-  render?: (row: T) => ReactNode;
+  render?: (row: T, index: number) => ReactNode;
   numeric?: boolean;
   sortable?: boolean;
   width?: string;
@@ -219,7 +219,7 @@ export function DataTable<T extends Record<string, unknown>>({
               {columns.map(col => (
                 <td key={String(col.key)}
                   className={`px-4 py-3 text-[var(--color-text-primary)] ${col.numeric ? 'text-right font-["IBM_Plex_Mono"] tabular-nums' : ''}`}>
-                  {col.render ? col.render(row) : String(row[col.key as keyof T] ?? '')}
+                  {col.render ? col.render(row, i) : String(row[col.key as keyof T] ?? '')}
                 </td>
               ))}
             </tr>

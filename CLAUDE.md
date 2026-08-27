@@ -1,0 +1,1 @@
+After any code change in this project, append a dated entry to CHANGELOG.md with: task description, files changed, one-line summary of what/why per file, and execution flow (what was read/edited/verified, in order). Bullet points only, no prose.

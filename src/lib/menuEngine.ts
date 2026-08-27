@@ -1,5 +1,36 @@
 import type { MenuItem, BillingEntry, MenuQuadrant } from '../types';
 
+export function buildMenuFromBilling(entries: BillingEntry[], existingMenu: MenuItem[]): MenuItem[] {
+  const menuMap = new Map<string, MenuItem>(existingMenu.map(m => [m.name.trim().toLowerCase(), m]));
+  const dishPrices = new Map<string, number[]>();
+
+  for (const e of entries) {
+    const key = e.dishName.trim().toLowerCase();
+    const prices = dishPrices.get(key) ?? [];
+    prices.push(e.sellingPrice);
+    dishPrices.set(key, prices);
+  }
+
+  const result: MenuItem[] = [];
+  for (const [key, prices] of dishPrices.entries()) {
+    const name = key.charAt(0).toUpperCase() + key.slice(1);
+    const existing = menuMap.get(key);
+    if (existing) {
+      result.push(existing);
+    } else {
+      const avgPrice = Math.round(prices.reduce((s, p) => s + p, 0) / prices.length);
+      const rawMaterialCost = Math.round(avgPrice * 0.35);
+      const idBase = key.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      const id = existingMenu.some(m => m.id === idBase) || result.some(m => m.id === idBase)
+        ? `${idBase}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+        : idBase;
+      result.push({ id, name, sellingPrice: avgPrice, rawMaterialCost });
+    }
+  }
+
+  return result;
+}
+
 export interface DishMetrics {
   name: string;
   totalQuantity: number;

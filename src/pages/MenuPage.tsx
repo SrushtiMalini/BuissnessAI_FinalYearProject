@@ -3,18 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Save, ChevronDown, ChevronUp } from 'lucide-react';
 import { storage } from '../lib/storage';
 import { computeDishMetrics, classifyMenu } from '../lib/menuEngine';
-import { Button, Card, Badge, PageHeader, EmptyState } from '../design-system/components';
+import { Button, Card, Badge, PageHeader } from '../design-system/components';
 import type { MenuItem } from '../types';
-
-const SAMPLE_MENU: MenuItem[] = [
-  { id: '1', name: 'Dal Fry', sellingPrice: 80, rawMaterialCost: 28, category: 'main' },
-  { id: '2', name: 'Paneer Butter Masala', sellingPrice: 160, rawMaterialCost: 72, category: 'main' },
-  { id: '3', name: 'Veg Thali', sellingPrice: 120, rawMaterialCost: 38, category: 'main' },
-  { id: '4', name: 'Rajma Chawal', sellingPrice: 90, rawMaterialCost: 31, category: 'main' },
-  { id: '5', name: 'Egg Curry', sellingPrice: 100, rawMaterialCost: 29, category: 'main' },
-  { id: '6', name: 'Roti', sellingPrice: 15, rawMaterialCost: 5, category: 'bread' },
-  { id: '7', name: 'Jeera Rice', sellingPrice: 60, rawMaterialCost: 18, category: 'rice' },
-];
 
 function marginPct(item: MenuItem): number {
   return item.sellingPrice > 0 ? ((item.sellingPrice - item.rawMaterialCost) / item.sellingPrice) * 100 : 0;
@@ -34,8 +24,7 @@ export default function MenuPage() {
   const [showQuadrants, setShowQuadrants] = useState(true);
 
   useEffect(() => {
-    const stored = storage.getMenu();
-    setItems(stored.length ? stored : SAMPLE_MENU);
+    setItems(storage.getMenu());
   }, []);
 
   const billing = storage.getBilling();

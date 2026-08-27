@@ -25,8 +25,14 @@ function get<T>(key: string): T | null {
   }
 }
 
-function set<T>(key: string, value: T): void {
-  localStorage.setItem(key, JSON.stringify(value));
+function set<T>(key: string, value: T): boolean {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.error('Failed to set item in localStorage:', error);
+    return false;
+  }
 }
 
 export const storage = {
@@ -37,13 +43,7 @@ export const storage = {
   setMenu: (items: MenuItem[]) => set(KEYS.menu, items),
 
   getBilling: (): BillingEntry[] => get<BillingEntry[]>(KEYS.billing) ?? [],
-  appendBilling: (entries: BillingEntry[]) => {
-    const existing = get<BillingEntry[]>(KEYS.billing) ?? [];
-    const existingIds = new Set(existing.map(e => e.id));
-    const newEntries = entries.filter(e => !existingIds.has(e.id));
-    set(KEYS.billing, [...existing, ...newEntries]);
-    return newEntries.length;
-  },
+  setBilling: (entries: BillingEntry[]) => set(KEYS.billing, entries),
   clearBilling: () => localStorage.removeItem(KEYS.billing),
 
   getReports: (): Report[] => get<Report[]>(KEYS.reports) ?? [],

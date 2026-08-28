@@ -16,9 +16,15 @@ const KEYS = {
   promotions: 'biq_promotions',
 } as const;
 
+// Every key is namespaced by the logged-in restaurant so accounts never see each other's data.
+function nsKey(base: string): string {
+  const restaurantId = localStorage.getItem('biq_restaurant_id') ?? 'anon';
+  return `${base}_${restaurantId}`;
+}
+
 function get<T>(key: string): T | null {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(nsKey(key));
     return raw ? (JSON.parse(raw) as T) : null;
   } catch {
     return null;
@@ -27,12 +33,16 @@ function get<T>(key: string): T | null {
 
 function set<T>(key: string, value: T): boolean {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(nsKey(key), JSON.stringify(value));
     return true;
   } catch (error) {
     console.error('Failed to set item in localStorage:', error);
     return false;
   }
+}
+
+function remove(key: string): void {
+  localStorage.removeItem(nsKey(key));
 }
 
 export const storage = {
@@ -44,7 +54,7 @@ export const storage = {
 
   getBilling: (): BillingEntry[] => get<BillingEntry[]>(KEYS.billing) ?? [],
   setBilling: (entries: BillingEntry[]) => set(KEYS.billing, entries),
-  clearBilling: () => localStorage.removeItem(KEYS.billing),
+  clearBilling: () => remove(KEYS.billing),
 
   getReports: (): Report[] => get<Report[]>(KEYS.reports) ?? [],
   appendReport: (report: Report) => {
@@ -57,7 +67,7 @@ export const storage = {
     const existing = get<ChatMessage[]>(KEYS.chat) ?? [];
     set(KEYS.chat, [...existing, msg].slice(-100));
   },
-  clearChat: () => localStorage.removeItem(KEYS.chat),
+  clearChat: () => remove(KEYS.chat),
 
   // ML: Ingredient mappings
   getIngredientMappings: (): IngredientMapping[] =>
@@ -91,7 +101,7 @@ export const storage = {
     set(KEYS.promotions, existing.map(p => p.id === promo.id ? promo : p));
   },
 
-  clearAll: () => Object.values(KEYS).forEach(k => localStorage.removeItem(k)),
+  clearAll: () => Object.values(KEYS).forEach(k => remove(k)),
 };
 
 // Re-export type for convenience

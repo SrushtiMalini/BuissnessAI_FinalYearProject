@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Upload, UtensilsCrossed, TrendingUp, FileText, MessageSquare,
   ChefHat, Package, Trash2, DollarSign, Users, BarChart2, Settings, Menu, X,
-  Bell, Megaphone,
+  Bell, Megaphone, LogOut,
 } from 'lucide-react';
 import { storage } from '../lib/storage';
+import { authClient } from '../lib/authClient';
 
 const NAV = [
   {
@@ -39,6 +40,12 @@ const NAV = [
 
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    authClient.logout();
+    navigate('/login', { replace: true });
+  }
 
   return (
     <>
@@ -95,6 +102,17 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
             </div>
           ))}
         </nav>
+
+        <div className="p-2 border-t border-white/10 shrink-0">
+          <button
+            onClick={handleLogout}
+            title={collapsed ? 'Logout' : undefined}
+            className="flex items-center gap-3 w-full px-2 py-2 rounded-[var(--radius-md)] text-white/50 hover:text-white/90 hover:bg-white/8 transition-colors"
+          >
+            <LogOut size={16} className="shrink-0" />
+            {!collapsed && <span className="text-[var(--text-sm)] font-medium">Logout</span>}
+          </button>
+        </div>
       </aside>
     </>
   );

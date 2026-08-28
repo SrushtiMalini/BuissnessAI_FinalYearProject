@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppShell from './layout/AppShell';
 import OnboardingPage from './pages/OnboardingPage';
+import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
 import UploadPage from './pages/UploadPage';
 import MenuPage from './pages/MenuPage';
 import DashboardPage from './pages/DashboardPage';
@@ -14,6 +16,12 @@ import WorkforcePlanningPage from './pages/ml/WorkforcePlanningPage';
 import DynamicPricingPage from './pages/ml/DynamicPricingPage';
 import PromotionAnalysisPage from './pages/ml/PromotionAnalysisPage';
 import { storage } from './lib/storage';
+import { authClient } from './lib/authClient';
+
+function RequireAuth({ children }: { children: ReactNode }) {
+  if (!authClient.isAuthenticated()) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
 
 function RequireOnboarding({ children }: { children: ReactNode }) {
   const restaurant = storage.getRestaurant();
@@ -23,9 +31,11 @@ function RequireOnboarding({ children }: { children: ReactNode }) {
 
 function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <RequireOnboarding>
-      <AppShell>{children}</AppShell>
-    </RequireOnboarding>
+    <RequireAuth>
+      <RequireOnboarding>
+        <AppShell>{children}</AppShell>
+      </RequireOnboarding>
+    </RequireAuth>
   );
 }
 
@@ -33,7 +43,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<OnboardingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/" element={<RequireAuth><OnboardingPage /></RequireAuth>} />
 
         <Route path="/dashboard" element={<AppLayout><DashboardPage /></AppLayout>} />
         <Route path="/upload" element={<AppLayout><UploadPage /></AppLayout>} />

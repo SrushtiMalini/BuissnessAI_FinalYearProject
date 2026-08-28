@@ -34,6 +34,7 @@ const NAV = [
       { to: '/menu', label: 'Menu Setup', icon: UtensilsCrossed },
       { to: '/forecast', label: 'Forecasting', icon: TrendingUp },
       { to: '/upload', label: 'Upload Data', icon: Upload },
+      { to: '/settings', label: 'Settings', icon: Settings },
     ],
   },
 ];

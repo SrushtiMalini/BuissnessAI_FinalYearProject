@@ -1,14 +1,28 @@
 import { useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Upload, TrendingUp, ShoppingBag, Percent, Activity } from 'lucide-react';
+import {
+  Upload, TrendingUp, ShoppingBag, Percent, Activity, Lightbulb,
+  Trophy, PieChart as PieChartIcon, CalendarDays, Clock, Layers,
+} from 'lucide-react';
 import { storage } from '../lib/storage';
 import {
   getDailySummaries, getRevenueByDay, getTopDishes,
   getMealPeriodSplit, getWeeklyComparison, computeKPIs, getPeakHours,
 } from '../lib/analytics';
+import { computeDishMetrics, classifyMenu } from '../lib/menuEngine';
 import { MetricTile, Card, Badge, EmptyState, Button, DataTable } from '../design-system/components';
 import { AreaChart, BarChart, DonutChart } from '../design-system/charts';
 import { CHART_COLORS } from '../design-system/charts';
+
+const FOOD_COST_BENCHMARK = 30;
+
+const MENU_HEALTH_CONFIG = {
+  star: { label: 'Star', variant: 'warning' as const },
+  hiddenGem: { label: 'Hidden Gem', variant: 'info' as const },
+  volumeTrap: { label: 'Volume Trap', variant: 'neutral' as const },
+  deadWeight: { label: 'Dead Weight', variant: 'danger' as const },
+};
 
 function fmtCurrency(n: number): string {
   return `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -18,6 +32,48 @@ function fmtShortDate(d: unknown): string {
   if (typeof d !== 'string') return '';
   const date = new Date(d);
   return `${date.getDate()}/${date.getMonth() + 1}`;
+}
+
+function sectionTitle(icon: ReactNode, label: string) {
+  return (
+    <span className="flex items-center gap-2">
+      <span className="text-[var(--color-text-muted)]">{icon}</span> {label}
+    </span>
+  );
+}
+
+// Plain computed callouts — no AI involved, just thresholds/derivations over the same data the KPI tiles use.
+function computeInsights(
+  kpis: ReturnType<typeof computeKPIs>,
+  weekly: ReturnType<typeof getWeeklyComparison>,
+  topDishes: { name: string; quantity: number; revenue: number }[],
+  quadrant: ReturnType<typeof classifyMenu>,
+): string[] {
+  const insights: string[] = [];
+
+  const foodCostDiff = kpis.avgFoodCost - FOOD_COST_BENCHMARK;
+  if (Math.abs(foodCostDiff) >= 1) {
+    insights.push(
+      `Food cost is ${Math.abs(foodCostDiff).toFixed(0)}pt${Math.abs(foodCostDiff) >= 1.5 ? 's' : ''} ${foodCostDiff > 0 ? 'above' : 'below'} the ${FOOD_COST_BENCHMARK}% benchmark`
+    );
+  }
+
+  if (weekly.lastWeek > 0) {
+    const dir = weekly.pctChange >= 0 ? 'up' : 'down';
+    insights.push(`Revenue is ${dir} ${Math.abs(weekly.pctChange).toFixed(1)}% vs last week`);
+  }
+
+  if (topDishes[0]) {
+    insights.push(`${topDishes[0].name} is your top earner (${fmtCurrency(topDishes[0].revenue)})`);
+  }
+
+  if (quadrant.deadWeight.length > 0) {
+    insights.push(`${quadrant.deadWeight.length} dish${quadrant.deadWeight.length > 1 ? 'es are' : ' is'} Dead Weight — consider trimming the menu`);
+  } else if (quadrant.hiddenGem.length > 0) {
+    insights.push(`${quadrant.hiddenGem.length} Hidden Gem dish${quadrant.hiddenGem.length > 1 ? 'es' : ''} — promote ${quadrant.hiddenGem.length > 1 ? 'them' : 'it'} more`);
+  }
+
+  return insights.slice(0, 4);
 }
 
 export default function DashboardPage() {
@@ -32,6 +88,9 @@ export default function DashboardPage() {
   const weekly = useMemo(() => getWeeklyComparison(summaries), [summaries]);
   const kpis = useMemo(() => computeKPIs(summaries), [summaries]);
   const peakHours = useMemo(() => getPeakHours(billing).filter(h => h.orders > 0), [billing]);
+  const dishMetrics = useMemo(() => computeDishMetrics(billing, menu), [billing, menu]);
+  const quadrant = useMemo(() => classifyMenu(dishMetrics), [dishMetrics]);
+  const insights = useMemo(() => computeInsights(kpis, weekly, topDishes, quadrant), [kpis, weekly, topDishes, quadrant]);
 
   if (!billing.length) {
     return (
@@ -89,6 +148,7 @@ export default function DashboardPage() {
           change={weekly.pctChange}
           changeLabel="vs last week"
           icon={<TrendingUp size={18} />}
+          status={weekly.lastWeek > 0 ? (weekly.pctChange >= 0 ? 'good' : weekly.pctChange <= -10 ? 'danger' : 'warning') : undefined}
         />
         <MetricTile
           label="Total Orders"
@@ -108,14 +168,48 @@ export default function DashboardPage() {
           label="Avg Food Cost"
           value={`${kpis.avgFoodCost.toFixed(1)}%`}
           valueFont="mono"
-          subtext="Benchmark: 30%"
+          subtext={`Benchmark: ${FOOD_COST_BENCHMARK}%`}
           accent={kpis.avgFoodCost > 35 ? 'var(--color-danger)' : kpis.avgFoodCost > 30 ? 'var(--color-warning)' : 'var(--color-success)'}
+          status={kpis.avgFoodCost > 35 ? 'danger' : kpis.avgFoodCost > 30 ? 'warning' : 'good'}
           icon={<Percent size={18} />}
         />
       </div>
 
+      {/* Insights strip — plain computed callouts, no AI */}
+      {insights.length > 0 && (
+        <Card padding="sm">
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            {insights.map((text, i) => (
+              <div key={i} className="flex items-center gap-2 text-[var(--text-sm)] text-[var(--color-text-secondary)]">
+                <Lightbulb size={14} style={{ color: 'var(--color-sunburst)' }} className="shrink-0" />
+                <span>{text}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Menu Health */}
+      <Card
+        title={sectionTitle(<Layers size={16} />, 'Menu Health')}
+        subtitle="Profitability classification across your menu"
+        action={<Link to="/menu" className="text-[var(--text-xs)] font-medium text-[var(--color-unity)] hover:underline">View Menu →</Link>}
+      >
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {(Object.keys(MENU_HEALTH_CONFIG) as (keyof typeof MENU_HEALTH_CONFIG)[]).map(key => {
+            const cfg = MENU_HEALTH_CONFIG[key];
+            return (
+              <div key={key} className="text-center p-3 rounded-[var(--radius-md)] bg-[var(--color-bg-primary)]">
+                <p className="text-[var(--text-2xl)] font-semibold text-[var(--color-text-primary)]">{quadrant[key].length}</p>
+                <Badge variant={cfg.variant}>{cfg.label}</Badge>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
       {/* Revenue trend */}
-      <Card title="Revenue — Last 30 Days" subtitle="Revenue and gross profit trend">
+      <Card title={sectionTitle(<TrendingUp size={16} />, 'Revenue — Last 30 Days')} subtitle="Revenue and gross profit trend">
         <AreaChart
           data={revenueByDay}
           areas={[
@@ -132,7 +226,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top dishes table */}
-        <Card title="Top Dishes by Revenue" subtitle="All-time performance">
+        <Card title={sectionTitle(<Trophy size={16} />, 'Top Dishes by Revenue')} subtitle="All-time performance">
           <DataTable
             columns={topDishColumns as any}
             data={topDishes.map((d, i) => ({ ...d, rank: i + 1 })) as any}
@@ -141,7 +235,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Meal period split */}
-        <Card title="Revenue by Meal Period">
+        <Card title={sectionTitle(<PieChartIcon size={16} />, 'Revenue by Meal Period')}>
           {mealPieData.length > 0 ? (
             <DonutChart
               data={mealPieData}
@@ -159,7 +253,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Weekly comparison */}
-        <Card title="This Week vs Last Week">
+        <Card title={sectionTitle(<CalendarDays size={16} />, 'This Week vs Last Week')}>
           <div className="space-y-3 pt-2">
             {[
               { label: 'This week', value: fmtCurrency(weekly.thisWeek), highlight: true },
@@ -183,7 +277,7 @@ export default function DashboardPage() {
 
         {/* Peak hours */}
         {peakHours.length > 0 ? (
-          <Card title="Peak Hours" subtitle="Order volume by hour" className="lg:col-span-2">
+          <Card title={sectionTitle(<Clock size={16} />, 'Peak Hours')} subtitle="Order volume by hour" className="lg:col-span-2">
             <BarChart
               data={peakHours.filter(h => h.orders > 0).slice(6, 23)}
               bars={[{ key: 'orders', name: 'Orders', color: CHART_COLORS[1] }]}
@@ -194,7 +288,7 @@ export default function DashboardPage() {
             />
           </Card>
         ) : (
-          <Card title="Peak Hours" className="lg:col-span-2">
+          <Card title={sectionTitle(<Clock size={16} />, 'Peak Hours')} className="lg:col-span-2">
             <EmptyState
               title="No time data"
               description="Upload data with time column to see peak hour analysis."

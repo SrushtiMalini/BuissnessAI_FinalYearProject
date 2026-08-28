@@ -65,13 +65,19 @@ export function buildReportContext(
   return lines.join('\n');
 }
 
+export interface AIReportResult {
+  text: string;
+  error?: string;
+}
+
 export async function generateDailyReport(
   entries: BillingEntry[],
   menu: MenuItem[],
   restaurantName: string,
-  type: 'morning' | 'evening' = 'evening'
-): Promise<string> {
-  const context = buildReportContext(entries, menu);
+  type: 'morning' | 'evening' = 'evening',
+  targetDate?: string
+): Promise<AIReportResult> {
+  const context = buildReportContext(entries, menu, targetDate);
   const instruction = type === 'evening'
     ? `You are a friendly AI business analyst for "${restaurantName}". Based on the data below, generate an end-of-day business report. Include: overall performance verdict (strong/decent/weak day), key wins, one or two specific things that need attention, and a short actionable suggestion for tomorrow. Write in plain, warm, human language. Do not use bullet points. Keep it under 200 words. End by asking how the day felt from the owner's perspective.`
     : `You are a friendly AI business analyst for "${restaurantName}". Based on the data below, generate a morning brief. Include: yesterday's performance summary, what to expect today based on patterns, and one specific preparation tip for today. Write in plain, warm language. Under 150 words.`;
@@ -80,5 +86,5 @@ export async function generateDailyReport(
     context: `${instruction}\n\n${context}`,
   });
 
-  return result.error ? `Could not generate AI report: ${result.error}` : result.text;
+  return result.error ? { text: '', error: result.error } : { text: result.text };
 }

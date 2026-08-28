@@ -20,6 +20,7 @@ const tooltipStyle = {
 };
 
 const axisStyle = { fill: 'var(--color-text-muted)', fontSize: 11, fontFamily: 'IBM Plex Mono' };
+const gridStyle = { stroke: 'var(--color-border-default)', strokeDasharray: '3 3', vertical: false };
 
 interface ChartWrapperProps {
   data: Record<string, unknown>[];
@@ -45,12 +46,14 @@ export function BarChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <RBarChart data={data} layout={layout} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+        <CartesianGrid {...gridStyle} />
         <XAxis
           dataKey={layout === 'horizontal' ? xKey : undefined}
           type={layout === 'vertical' ? 'number' : 'category'}
           tick={axisStyle}
           axisLine={{ stroke: 'var(--color-border-default)' }}
           tickLine={false}
+          minTickGap={20}
           tickFormatter={xFormatter as ((v: unknown) => string) | undefined}
         />
         <YAxis
@@ -92,8 +95,9 @@ export function LineChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <RLineChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+        <CartesianGrid {...gridStyle} />
         <XAxis dataKey={xKey} tick={axisStyle} axisLine={{ stroke: 'var(--color-border-default)' }}
-          tickLine={false} tickFormatter={xFormatter as ((v: unknown) => string) | undefined} />
+          tickLine={false} minTickGap={20} tickFormatter={xFormatter as ((v: unknown) => string) | undefined} />
         <YAxis tick={axisStyle} axisLine={false} tickLine={false}
           tickFormatter={yFormatter ? (v: number) => yFormatter(v) : undefined} />
         <Tooltip {...tooltipStyle} formatter={tooltipFormatter} />
@@ -135,8 +139,9 @@ export function AreaChart({
             </linearGradient>
           ))}
         </defs>
+        <CartesianGrid {...gridStyle} />
         <XAxis dataKey={xKey} tick={axisStyle} axisLine={{ stroke: 'var(--color-border-default)' }}
-          tickLine={false} tickFormatter={xFormatter as ((v: unknown) => string) | undefined} />
+          tickLine={false} minTickGap={20} tickFormatter={xFormatter as ((v: unknown) => string) | undefined} />
         <YAxis tick={axisStyle} axisLine={false} tickLine={false}
           tickFormatter={yFormatter ? (v: number) => yFormatter(v) : undefined} />
         <Tooltip {...tooltipStyle} formatter={tooltipFormatter} />

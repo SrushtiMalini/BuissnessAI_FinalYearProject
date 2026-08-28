@@ -5,6 +5,7 @@ import OnboardingPage from './pages/OnboardingPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import UploadPage from './pages/UploadPage';
+import SettingsPage from './pages/SettingsPage';
 import MenuPage from './pages/MenuPage';
 import DashboardPage from './pages/DashboardPage';
 import ForecastPage from './pages/ForecastPage';
@@ -49,6 +50,7 @@ export default function App() {
 
         <Route path="/dashboard" element={<AppLayout><DashboardPage /></AppLayout>} />
         <Route path="/upload" element={<AppLayout><UploadPage /></AppLayout>} />
+        <Route path="/settings" element={<AppLayout><SettingsPage /></AppLayout>} />
         <Route path="/menu" element={<AppLayout><MenuPage /></AppLayout>} />
         <Route path="/forecast" element={<AppLayout><ForecastPage /></AppLayout>} />
         <Route path="/report" element={<AppLayout><ReportPage /></AppLayout>} />

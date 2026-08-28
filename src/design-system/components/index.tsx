@@ -45,7 +45,7 @@ export function Button({
 interface CardProps {
   children: ReactNode;
   className?: string;
-  title?: string;
+  title?: ReactNode;
   subtitle?: string;
   action?: ReactNode;
   padding?: 'none' | 'sm' | 'md' | 'lg';
@@ -115,16 +115,27 @@ interface MetricTileProps {
   subtext?: string;
   accent?: string;
   icon?: ReactNode;
+  status?: 'good' | 'warning' | 'danger';
 }
 
-export function MetricTile({ label, value, valueFont = 'body', change, changeLabel, subtext, accent, icon }: MetricTileProps) {
+const STATUS_COLORS = {
+  good: 'var(--color-success)',
+  warning: 'var(--color-warning)',
+  danger: 'var(--color-danger)',
+};
+
+export function MetricTile({ label, value, valueFont = 'body', change, changeLabel, subtext, accent, icon, status }: MetricTileProps) {
   const fontClass = valueFont === 'display' ? 'font-["DM_Serif_Display"]' : valueFont === 'mono' ? 'font-["IBM_Plex_Mono"]' : 'font-bold';
   const isUp = change !== undefined && change >= 0;
   return (
-    <div className="bg-[var(--color-bg-card)] border border-[var(--color-border-default)] rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] p-6">
+    <div className="bg-[var(--color-bg-card)] border border-[var(--color-border-default)] rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] p-6"
+      style={status ? { borderLeft: `3px solid ${STATUS_COLORS[status]}` } : undefined}>
       <div className="flex items-start justify-between mb-2">
         <p className="text-[var(--text-xs)] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">{label}</p>
-        {icon && <span className="text-[var(--color-text-muted)]">{icon}</span>}
+        <div className="flex items-center gap-2 shrink-0">
+          {status && <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_COLORS[status] }} title={status} />}
+          {icon && <span className="text-[var(--color-text-muted)]">{icon}</span>}
+        </div>
       </div>
       <p className={`text-[var(--text-4xl)] ${fontClass} text-[var(--color-text-primary)] leading-none mb-2`}
         style={accent ? { color: accent } : undefined}>
@@ -377,6 +388,53 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
     </div>
   );
 }
+
+// ─── Pill (toggle button, for single/multi-select option groups) ─────────────
+
+interface PillProps {
+  selected: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  key?: string | number;
+}
+
+export function Pill({ selected, onClick, children }: PillProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-3 py-2 rounded-[var(--radius-md)] text-sm font-medium border transition-colors ${
+        selected
+          ? 'bg-[var(--color-unity)] border-[var(--color-unity)] text-[var(--color-text-inverse)]'
+          : 'border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ─── FormField (labeled wrapper for a single input) ──────────────────────────
+
+interface FormFieldProps {
+  label: string;
+  required?: boolean;
+  children: ReactNode;
+  key?: string | number;
+}
+
+export function FormField({ label, required, children }: FormFieldProps) {
+  return (
+    <div className="mb-4">
+      <label className="block text-[var(--color-text-secondary)] text-sm mb-1.5">
+        {label}{required && ' *'}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+export const formInputClass = 'w-full bg-[var(--color-bg-primary)] border border-[var(--color-border-default)] rounded-[var(--radius-md)] px-3 py-2 text-[var(--color-text-primary)] text-sm focus:outline-none focus:border-[var(--color-border-focus)]';
 
 // ─── Stat (legacy compat) ────────────────────────────────────────────────────
 

@@ -1,47 +1,16 @@
 import { useState } from 'react';
-import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChefHat, ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import { storage } from '../lib/storage';
-import { Button } from '../components/ui';
+import { Button, Pill, FormField, formInputClass } from '../components/ui';
+import {
+  ESTABLISHMENT_TYPES, MEAL_PERIODS, TRACKING_METHODS, PRIORITIES, CUISINE_SUGGESTIONS, togglePriority,
+} from '../lib/restaurantOptions';
 import type {
   Restaurant, EstablishmentType, MealPeriodOffered, TrackingMethod, BusinessPriority,
 } from '../types';
 
 const STEPS = ['Identity', 'Format', 'Tracking', 'Priorities', 'Review'];
-
-const ESTABLISHMENT_TYPES: { value: EstablishmentType; label: string }[] = [
-  { value: 'dhaba', label: 'Dhaba' },
-  { value: 'qsr', label: 'QSR' },
-  { value: 'cafe', label: 'Cafe' },
-  { value: 'fine-dine', label: 'Fine Dine' },
-  { value: 'cloud-kitchen', label: 'Cloud Kitchen' },
-  { value: 'other', label: 'Other' },
-];
-
-const MEAL_PERIODS: { value: MealPeriodOffered; label: string }[] = [
-  { value: 'breakfast', label: 'Breakfast' },
-  { value: 'lunch', label: 'Lunch' },
-  { value: 'dinner', label: 'Dinner' },
-];
-
-const TRACKING_METHODS: { value: TrackingMethod; label: string; description: string }[] = [
-  { value: 'pos', label: 'POS system', description: 'We use a point-of-sale system' },
-  { value: 'manual', label: 'Notebook / manual', description: 'We track sales by hand' },
-  { value: 'none', label: 'Not tracked yet', description: "We don't track sales currently" },
-];
-
-const PRIORITIES: { value: BusinessPriority; label: string }[] = [
-  { value: 'reducing-food-waste', label: 'Reducing food waste' },
-  { value: 'pricing-dishes', label: 'Pricing dishes correctly' },
-  { value: 'staffing-scheduling', label: 'Staffing / scheduling' },
-  { value: 'understanding-sales', label: 'Understanding what sells' },
-  { value: 'all', label: 'All of the above' },
-];
-
-const CUISINE_SUGGESTIONS = [
-  'North Indian', 'South Indian', 'Chaat', 'Continental', 'Chinese', 'Mughlai', 'Multi-cuisine',
-];
 
 interface FormState {
   name: string;
@@ -69,37 +38,6 @@ const INITIAL_FORM: FormState = {
   priorities: [],
 };
 
-interface PillProps { selected: boolean; onClick: () => void; children: ReactNode; key?: string; }
-
-function Pill({ selected, onClick, children }: PillProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-3 py-2 rounded-[var(--radius-md)] text-sm font-medium border transition-colors ${
-        selected
-          ? 'bg-[var(--color-unity)] border-[var(--color-unity)] text-[var(--color-text-inverse)]'
-          : 'border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
-  return (
-    <div className="mb-4">
-      <label className="block text-[var(--color-text-secondary)] text-sm mb-1.5">
-        {label}{required && ' *'}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-const inputClass = 'w-full bg-[var(--color-bg-primary)] border border-[var(--color-border-default)] rounded-[var(--radius-md)] px-3 py-2 text-[var(--color-text-primary)] text-sm focus:outline-none focus:border-[var(--color-border-focus)]';
-
 export default function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
@@ -114,17 +52,8 @@ export default function OnboardingPage() {
     }));
   }
 
-  function togglePriority(value: BusinessPriority) {
-    setForm(f => {
-      if (value === 'all') {
-        return { ...f, priorities: f.priorities.length === 1 && f.priorities[0] === 'all' ? [] : ['all'] };
-      }
-      const withoutAll = f.priorities.filter(p => p !== 'all');
-      return {
-        ...f,
-        priorities: withoutAll.includes(value) ? withoutAll.filter(v => v !== value) : [...withoutAll, value],
-      };
-    });
+  function handleTogglePriority(value: BusinessPriority) {
+    setForm(f => ({ ...f, priorities: togglePriority(f.priorities, value) }));
   }
 
   const canProceed = [
@@ -198,33 +127,33 @@ export default function OnboardingPage() {
           {step === 0 && (
             <>
               <h2 className="text-[var(--color-text-primary)] font-semibold text-lg mb-5">Restaurant identity</h2>
-              <Field label="Restaurant Name" required>
-                <input className={inputClass} value={form.name} placeholder="e.g. Shyam Dhaba"
+              <FormField label="Restaurant Name" required>
+                <input className={formInputClass} value={form.name} placeholder="e.g. Shyam Dhaba"
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-              </Field>
-              <Field label="Owner Name" required>
-                <input className={inputClass} value={form.ownerName} placeholder="e.g. Shashank"
+              </FormField>
+              <FormField label="Owner Name" required>
+                <input className={formInputClass} value={form.ownerName} placeholder="e.g. Shashank"
                   onChange={e => setForm(f => ({ ...f, ownerName: e.target.value }))} />
-              </Field>
-              <Field label="City">
-                <input className={inputClass} value={form.city} placeholder="e.g. Bangalore"
+              </FormField>
+              <FormField label="City">
+                <input className={formInputClass} value={form.city} placeholder="e.g. Bangalore"
                   onChange={e => setForm(f => ({ ...f, city: e.target.value }))} />
-              </Field>
-              <Field label="Cuisine / Theme">
-                <input className={inputClass} value={form.cuisine} placeholder="e.g. North Indian, Chaat, Continental"
+              </FormField>
+              <FormField label="Cuisine / Theme">
+                <input className={formInputClass} value={form.cuisine} placeholder="e.g. North Indian, Chaat, Continental"
                   list="cuisine-suggestions"
                   onChange={e => setForm(f => ({ ...f, cuisine: e.target.value }))} />
                 <datalist id="cuisine-suggestions">
                   {CUISINE_SUGGESTIONS.map(c => <option key={c} value={c} />)}
                 </datalist>
-              </Field>
+              </FormField>
             </>
           )}
 
           {step === 1 && (
             <>
               <h2 className="text-[var(--color-text-primary)] font-semibold text-lg mb-5">Business format</h2>
-              <Field label="Establishment type" required>
+              <FormField label="Establishment type" required>
                 <div className="flex flex-wrap gap-2">
                   {ESTABLISHMENT_TYPES.map(t => (
                     <Pill key={t.value} selected={form.establishmentType === t.value}
@@ -233,14 +162,14 @@ export default function OnboardingPage() {
                     </Pill>
                   ))}
                 </div>
-              </Field>
-              <Field label="Days open per week" required>
-                <select className={inputClass} value={form.daysOpenPerWeek}
+              </FormField>
+              <FormField label="Days open per week" required>
+                <select className={formInputClass} value={form.daysOpenPerWeek}
                   onChange={e => setForm(f => ({ ...f, daysOpenPerWeek: Number(e.target.value) }))}>
                   {[1, 2, 3, 4, 5, 6, 7].map(n => <option key={n} value={n}>{n}</option>)}
                 </select>
-              </Field>
-              <Field label="Meal periods served" required>
+              </FormField>
+              <FormField label="Meal periods served" required>
                 <div className="flex flex-wrap gap-2">
                   {MEAL_PERIODS.map(m => (
                     <Pill key={m.value} selected={form.mealPeriods.includes(m.value)} onClick={() => toggleMealPeriod(m.value)}>
@@ -248,14 +177,14 @@ export default function OnboardingPage() {
                     </Pill>
                   ))}
                 </div>
-              </Field>
+              </FormField>
             </>
           )}
 
           {step === 2 && (
             <>
               <h2 className="text-[var(--color-text-primary)] font-semibold text-lg mb-5">Current tracking method</h2>
-              <Field label="How do you currently track sales?" required>
+              <FormField label="How do you currently track sales?" required>
                 <div className="flex flex-col gap-2">
                   {TRACKING_METHODS.map(t => (
                     <button key={t.value} type="button"
@@ -270,12 +199,12 @@ export default function OnboardingPage() {
                     </button>
                   ))}
                 </div>
-              </Field>
+              </FormField>
               {form.trackingMethod === 'pos' && (
-                <Field label="Which POS system?">
-                  <input className={inputClass} value={form.posName} placeholder="e.g. Petpooja, Poster POS"
+                <FormField label="Which POS system?">
+                  <input className={formInputClass} value={form.posName} placeholder="e.g. Petpooja, Poster POS"
                     onChange={e => setForm(f => ({ ...f, posName: e.target.value }))} />
-                </Field>
+                </FormField>
               )}
             </>
           )}
@@ -283,15 +212,15 @@ export default function OnboardingPage() {
           {step === 3 && (
             <>
               <h2 className="text-[var(--color-text-primary)] font-semibold text-lg mb-5">Priorities</h2>
-              <Field label="What do you most want help with right now?" required>
+              <FormField label="What do you most want help with right now?" required>
                 <div className="flex flex-wrap gap-2">
                   {PRIORITIES.map(p => (
-                    <Pill key={p.value} selected={form.priorities.includes(p.value)} onClick={() => togglePriority(p.value)}>
+                    <Pill key={p.value} selected={form.priorities.includes(p.value)} onClick={() => handleTogglePriority(p.value)}>
                       {p.label}
                     </Pill>
                   ))}
                 </div>
-              </Field>
+              </FormField>
             </>
           )}
 

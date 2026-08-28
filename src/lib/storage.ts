@@ -1,7 +1,7 @@
 import type {
   Restaurant, MenuItem, BillingEntry, Report, ChatMessage,
   IngredientMapping, WastagePrediction, PricingRecommendation,
-  PromotionRecord,
+  PromotionRecord, Opportunity, OpportunityStatus,
 } from '../types';
 
 const KEYS = {
@@ -14,6 +14,7 @@ const KEYS = {
   wastageLog: 'biq_wastage_log',
   pricingRecs: 'biq_pricing_recs',
   promotions: 'biq_promotions',
+  opportunities: 'biq_opportunities',
 } as const;
 
 // Every key is namespaced by the logged-in restaurant so accounts never see each other's data.
@@ -99,6 +100,17 @@ export const storage = {
   updatePromotion: (promo: PromotionRecord) => {
     const existing = get<PromotionRecord[]>(KEYS.promotions) ?? [];
     set(KEYS.promotions, existing.map(p => p.id === promo.id ? promo : p));
+  },
+
+  // Opportunity Engine
+  getOpportunities: (): Opportunity[] => get<Opportunity[]>(KEYS.opportunities) ?? [],
+  setOpportunities: (opportunities: Opportunity[]) => set(KEYS.opportunities, opportunities),
+  updateOpportunityStatus: (id: string, status: OpportunityStatus) => {
+    const existing = get<Opportunity[]>(KEYS.opportunities) ?? [];
+    const today = new Date().toISOString().slice(0, 10);
+    set(KEYS.opportunities, existing.map(o => o.id === id
+      ? { ...o, status, actedOnDate: status === 'acted_on' ? today : o.actedOnDate }
+      : o));
   },
 
   clearAll: () => Object.values(KEYS).forEach(k => remove(k)),

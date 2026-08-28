@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Upload, UtensilsCrossed, TrendingUp, FileText, MessageSquare,
   ChefHat, Package, Trash2, DollarSign, Users, BarChart2, Settings, Menu, X,
-  Bell, Megaphone, LogOut,
+  Bell, Megaphone, LogOut, Sparkles,
 } from 'lucide-react';
 import { storage } from '../lib/storage';
 import { authClient } from '../lib/authClient';
@@ -21,6 +21,7 @@ const NAV = [
   {
     section: 'Intelligence',
     items: [
+      { to: '/opportunities', label: 'Opportunities', icon: Sparkles },
       { to: '/ml/ingredients', label: 'Ingredient Forecast', icon: Package },
       { to: '/ml/wastage', label: 'Wastage Management', icon: Trash2 },
       { to: '/ml/pricing', label: 'Dynamic Pricing', icon: DollarSign },

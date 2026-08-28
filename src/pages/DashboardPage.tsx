@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Upload, TrendingUp, ShoppingBag, Percent, Activity, Lightbulb,
-  Trophy, PieChart as PieChartIcon, CalendarDays, Clock, Layers,
+  Trophy, PieChart as PieChartIcon, CalendarDays, Clock, Layers, Sparkles, Check, X,
 } from 'lucide-react';
 import { storage } from '../lib/storage';
 import {
@@ -10,9 +10,15 @@ import {
   getMealPeriodSplit, getWeeklyComparison, computeKPIs, getPeakHours,
 } from '../lib/analytics';
 import { computeDishMetrics, classifyMenu } from '../lib/menuEngine';
+import { scoreOf } from '../lib/opportunityEngine';
 import { MetricTile, Card, Badge, EmptyState, Button, DataTable, IconTitle } from '../design-system/components';
 import { AreaChart, BarChart, DonutChart } from '../design-system/charts';
 import { CHART_COLORS } from '../design-system/charts';
+import type { Opportunity } from '../types';
+
+const CONFIDENCE_BADGE: Record<Opportunity['confidence'], 'success' | 'warning' | 'neutral'> = {
+  high: 'success', medium: 'warning', low: 'neutral',
+};
 
 const FOOD_COST_BENCHMARK = 30;
 
@@ -82,6 +88,17 @@ export default function DashboardPage() {
   const dishMetrics = useMemo(() => computeDishMetrics(billing, menu), [billing, menu]);
   const quadrant = useMemo(() => classifyMenu(dishMetrics), [dishMetrics]);
   const insights = useMemo(() => computeInsights(kpis, weekly, topDishes, quadrant), [kpis, weekly, topDishes, quadrant]);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>(() => storage.getOpportunities());
+
+  function handleOpportunityAction(id: string, status: 'acted_on' | 'dismissed') {
+    storage.updateOpportunityStatus(id, status);
+    setOpportunities(storage.getOpportunities());
+  }
+
+  const newOpportunities = useMemo(
+    () => opportunities.filter(o => o.status === 'new').sort((a, b) => scoreOf(b) - scoreOf(a)).slice(0, 5),
+    [opportunities]
+  );
 
   if (!billing.length) {
     return (
@@ -130,6 +147,33 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {/* This Week's Opportunities — synthesized from Menu Engineering, Pricing, Wastage, Promotion, and trend signals */}
+      {newOpportunities.length > 0 && (
+        <Card title={IconTitle(<Sparkles size={16} />, "This Week's Opportunities")} subtitle="Ranked by projected weekly impact">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {newOpportunities.map(o => (
+              <div key={o.id} className="border border-[var(--color-border-default)] rounded-[var(--radius-md)] p-4 flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-2">
+                  <Badge variant={CONFIDENCE_BADGE[o.confidence]}>{o.confidence} confidence</Badge>
+                  <span className="text-[var(--text-sm)] font-semibold text-[var(--color-success)] whitespace-nowrap">
+                    +{fmtCurrency(o.projectedImpact)}/wk
+                  </span>
+                </div>
+                <p className="text-[var(--text-sm)] text-[var(--color-text-primary)] leading-relaxed flex-1">{o.recommendationText}</p>
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => handleOpportunityAction(o.id, 'acted_on')} className="flex-1 justify-center">
+                    <Check size={13} /> Mark as Acted On
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => handleOpportunityAction(o.id, 'dismissed')} className="flex-1 justify-center">
+                    <X size={13} /> Dismiss
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* KPI tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricTile

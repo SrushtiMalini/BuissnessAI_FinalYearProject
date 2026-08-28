@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import UploadPage from './pages/UploadPage';
 import SettingsPage from './pages/SettingsPage';
+import OpportunityHistoryPage from './pages/OpportunityHistoryPage';
 import MenuPage from './pages/MenuPage';
 import DashboardPage from './pages/DashboardPage';
 import ForecastPage from './pages/ForecastPage';
@@ -58,6 +59,7 @@ export default function App() {
 
         {/* ML pages */}
         <Route path="/ml/wastage" element={<AppLayout><WastageManagementPage /></AppLayout>} />
+        <Route path="/opportunities" element={<AppLayout><OpportunityHistoryPage /></AppLayout>} />
         <Route path="/ml/ingredients" element={<AppLayout><IngredientForecastPage /></AppLayout>} />
         <Route path="/ml/workforce" element={<AppLayout><WorkforcePlanningPage /></AppLayout>} />
         <Route path="/ml/pricing" element={<AppLayout><DynamicPricingPage /></AppLayout>} />

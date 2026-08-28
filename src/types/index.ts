@@ -140,6 +140,35 @@ export interface WorkforceRecommendation {
   shiftLabel: string;
 }
 
+// ─── Opportunity Engine ─────────────────────────────────────────────────────
+
+export type OpportunitySignalType =
+  | 'trending_up' | 'trending_down' | 'quadrant_shift' | 'pricing' | 'wastage' | 'promotion';
+
+export type OpportunityStatus = 'new' | 'acted_on' | 'dismissed' | 'expired';
+
+export interface Opportunity {
+  id: string;
+  dishName: string;
+  signalType: OpportunitySignalType;
+  recommendationText: string;
+  projectedImpact: number; // estimated ₹/week
+  confidence: 'low' | 'medium' | 'high';
+  status: OpportunityStatus;
+  createdDate: string; // YYYY-MM-DD
+  /** Set when a marked-"acted_on" opportunity's actual outcome is later computed. */
+  resolvedDate: string | null;
+  /** Actual measured ₹/week impact once resolved; null until then. */
+  outcome: number | null;
+  /**
+   * When the owner marked this "acted_on" — not in the original spec's field list,
+   * but required to know when the 7-day outcome-check window starts; createdDate
+   * (when the signal was first detected) is a different moment and would make the
+   * outcome check fire too early/late if reused for this.
+   */
+  actedOnDate?: string | null;
+}
+
 export interface PromotionRecord {
   id: string;
   name: string;

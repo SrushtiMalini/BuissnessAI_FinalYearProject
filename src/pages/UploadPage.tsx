@@ -5,6 +5,7 @@ import { Upload, FileText, CheckCircle, AlertCircle, Info, ChevronDown, ChevronR
 import { parseCSV, type ParseProgress, type ParseResult } from '../lib/csvParser';
 import { storage } from '../lib/storage';
 import { buildMenuFromBilling } from '../lib/menuEngine';
+import { generateOpportunities } from '../lib/opportunityEngine';
 import { importClient, type ImportStatus } from '../lib/importClient';
 import { Button, Card, PageHeader } from '../components/ui';
 
@@ -45,7 +46,9 @@ export default function UploadPage() {
           const key = autoImportAppliedKey();
           if (localStorage.getItem(key) !== status.timestamp) {
             storage.setBilling(status.entries);
-            storage.setMenu(buildMenuFromBilling(status.entries, []));
+            const menu = buildMenuFromBilling(status.entries, []);
+            storage.setMenu(menu);
+            generateOpportunities(status.entries, menu);
             localStorage.setItem(key, status.timestamp);
           }
         }
@@ -125,6 +128,7 @@ export default function UploadPage() {
     }
     const menu = buildMenuFromBilling(result.entries, []);
     storage.setMenu(menu);
+    generateOpportunities(result.entries, menu);
     setSaved(true);
     setTimeout(() => navigate('/menu'), 800);
   }

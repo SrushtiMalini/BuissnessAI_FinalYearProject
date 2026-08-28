@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-08-29
+
+### Fix: CSV upload/auto-import wiped all prior billing/menu history instead of appending to it
+- **src/lib/storage.ts**: Added `appendBilling(newEntries)` — merges new rows onto existing `getBilling()` history, deduping by exact `(date, time, dishName, quantity, sellingPrice)` match (protects against re-uploading the same export twice), returns `{ added, total, ok }` so the UI can report real counts; `setBilling()` kept as a low-level full-replace primitive but no longer called by any upload/import path (doc comment updated to say so); added `billingRowKey()` as the shared dedup-identity helper — why: task requires normal uploads to add to history, with a real dedup safety net, not silently trust "no duplicates"
+- **src/pages/UploadPage.tsx**: Both call sites that used to do `storage.setBilling(newEntriesOnly)` — the manual `saveAndContinue` and the auto-import poll's silent-apply — now call `storage.appendBilling(newEntriesOnly)`, then re-read `storage.getBilling()` for the **full** accumulated history before calling `buildMenuFromBilling(fullBilling, storage.getMenu())` (previously passed only the just-uploaded entries and an empty existing-menu array) and `generateOpportunities(fullBilling, menu)` (previously passed only the just-uploaded entries — the Opportunity Engine's week-over-week trend/quadrant-shift signals need real multi-upload history to mean anything, so this was a necessary consequential fix, not called out explicitly in the task but required by it); added a `saveSummary` state and changed the post-save message to `"Added N new rows — M total rows now in history."` instead of implying a fresh count — why: task requires the menu to reflect every dish ever seen (via existingMenu merge) and the success message to reflect append semantics, not replacement
+- **Verified only one full-wipe path remains**: grepped the whole `src/` for `setBilling(`, `setMenu([])`, `localStorage.clear()`, and `clearAll()` — the only full-wipe call left anywhere is `storage.clearAll()` inside `SettingsPage.tsx`'s Danger Zone confirm handler; no other code path can erase billing data as a side effect
+- **Known, accepted tradeoff**: because the menu is now rebuilt from the *full* accumulated billing history (per the task's explicit requirement), a dish that stops appearing in new uploads will still show up in the menu forever, since it's still present somewhere in history — this exactly reverses an earlier fix ("old dishes carried forward") from before append-based history existed. This is intentional per this task's spec, not a regression; noted here so it isn't mistaken for one later
+
+### Execution flow
+- Grepped src/ for `setBilling|appendBilling|clearAll|buildMenuFromBilling|getBilling` to map every call site before changing anything
+- Created branch `fix-data-append` off `opportunity-engine` (committed that branch's prior work first)
+- Added `appendBilling`/`billingRowKey` to storage.ts; updated both UploadPage.tsx call sites (manual save + auto-import poll) to append, re-read full billing, merge with existing menu, and pass full billing to the Opportunity Engine; updated the success message
+- Ran `npx tsc --noEmit` — clean, no errors
+- **Verified the exact requested trace in isolation** (Node + an in-memory `localStorage` shim — no risk to the real "bengaluru cafe" account): uploaded a synthetic 90-day file → confirmed 90 distinct days present; manually edited one dish's price in the resulting menu (simulating an owner's manual edit on the Menu page); uploaded a new, separate 1-day file → confirmed **91** distinct days present (90 old + 1 new, not replaced) and confirmed the manually-edited price survived the second upload unchanged; re-uploaded the exact same 1-day file a second time → confirmed `added: 0` and the total row count did not change (dedup safety net works); ran `storage.clearAll()` → confirmed it still fully wipes billing to 0 rows, confirming the Danger Zone path is untouched and remains the only full-wipe route — all PASSED
+
 ## 2026-08-28
 
 ### Add Opportunity Engine — a synthesis layer over the 5 existing analytical modules

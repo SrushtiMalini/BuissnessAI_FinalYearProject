@@ -46,6 +46,12 @@ function remove(key: string): void {
   localStorage.removeItem(nsKey(key));
 }
 
+// Identity for dedup: same date+time+dish+quantity+price is treated as the same row
+// (protects against re-uploading the same day's export twice).
+function billingRowKey(e: BillingEntry): string {
+  return `${e.date}|${e.time ?? ''}|${e.dishName}|${e.quantity}|${e.sellingPrice}`;
+}
+
 export const storage = {
   getRestaurant: () => get<Restaurant>(KEYS.restaurant),
   setRestaurant: (r: Restaurant) => set(KEYS.restaurant, r),
@@ -54,7 +60,23 @@ export const storage = {
   setMenu: (items: MenuItem[]) => set(KEYS.menu, items),
 
   getBilling: (): BillingEntry[] => get<BillingEntry[]>(KEYS.billing) ?? [],
+  /** Full replace. Not called by any upload/import path — those must use appendBilling. */
   setBilling: (entries: BillingEntry[]) => set(KEYS.billing, entries),
+  /** Adds new rows to existing history, deduping identical (date, time, dish, quantity, price) rows. */
+  appendBilling: (newEntries: BillingEntry[]): { added: number; total: number; ok: boolean } => {
+    const existing = get<BillingEntry[]>(KEYS.billing) ?? [];
+    const seen = new Set(existing.map(billingRowKey));
+    const deduped: BillingEntry[] = [];
+    for (const e of newEntries) {
+      const key = billingRowKey(e);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(e);
+    }
+    const merged = [...existing, ...deduped];
+    const ok = set(KEYS.billing, merged);
+    return { added: deduped.length, total: ok ? merged.length : existing.length, ok };
+  },
   clearBilling: () => remove(KEYS.billing),
 
   getReports: (): Report[] => get<Report[]>(KEYS.reports) ?? [],

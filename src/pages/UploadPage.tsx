@@ -30,9 +30,11 @@ export default function UploadPage() {
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const [autoImportLoading, setAutoImportLoading] = useState(false);
   const [autoImportMessage, setAutoImportMessage] = useState('');
+  const [saveSummary, setSaveSummary] = useState<{ added: number; total: number } | null>(null);
 
-  // Poll the auto-import status; silently apply a freshly-detected folder-watch import
-  // via the same storage.setBilling + buildMenuFromBilling path the manual upload uses.
+  // Poll the auto-import status; silently APPEND a freshly-detected folder-watch import
+  // onto existing history via the same storage.appendBilling + buildMenuFromBilling path
+  // the manual upload uses — never replaces prior days.
   useEffect(() => {
     let cancelled = false;
 
@@ -45,10 +47,11 @@ export default function UploadPage() {
         if (status.success && status.timestamp && status.entries?.length) {
           const key = autoImportAppliedKey();
           if (localStorage.getItem(key) !== status.timestamp) {
-            storage.setBilling(status.entries);
-            const menu = buildMenuFromBilling(status.entries, []);
+            storage.appendBilling(status.entries);
+            const fullBilling = storage.getBilling();
+            const menu = buildMenuFromBilling(fullBilling, storage.getMenu());
             storage.setMenu(menu);
-            generateOpportunities(status.entries, menu);
+            generateOpportunities(fullBilling, menu);
             localStorage.setItem(key, status.timestamp);
           }
         }
@@ -77,6 +80,7 @@ export default function UploadPage() {
           totalRows: res.status.entries.length,
         });
         setSaved(false);
+        setSaveSummary(null);
         setError('');
         setImportStatus(res.status);
       } else {
@@ -94,6 +98,7 @@ export default function UploadPage() {
     setError('');
     setResult(null);
     setSaved(false);
+    setSaveSummary(null);
     setIssuesOpen(false);
     setProgress({ processed: 0, total: 1, pct: 0 });
 
@@ -121,14 +126,16 @@ export default function UploadPage() {
 
   function saveAndContinue() {
     if (!result?.entries.length) return;
-    const ok = storage.setBilling(result.entries);
+    const { added, total, ok } = storage.appendBilling(result.entries);
     if (!ok) {
       setError('Browser storage limit was exceeded.');
       return;
     }
-    const menu = buildMenuFromBilling(result.entries, []);
+    const fullBilling = storage.getBilling();
+    const menu = buildMenuFromBilling(fullBilling, storage.getMenu());
     storage.setMenu(menu);
-    generateOpportunities(result.entries, menu);
+    generateOpportunities(fullBilling, menu);
+    setSaveSummary({ added, total });
     setSaved(true);
     setTimeout(() => navigate('/menu'), 800);
   }
@@ -235,7 +242,12 @@ export default function UploadPage() {
           <div className="mt-4">
             {saved ? (
               <div className="flex items-center gap-2 text-[#4ADE80]">
-                <CheckCircle size={16} /> <span className="text-sm">Saved! Redirecting...</span>
+                <CheckCircle size={16} />
+                <span className="text-sm">
+                  {saveSummary
+                    ? `Added ${saveSummary.added.toLocaleString('en-IN')} new row${saveSummary.added === 1 ? '' : 's'} — ${saveSummary.total.toLocaleString('en-IN')} total rows now in history. Redirecting...`
+                    : 'Saved! Redirecting...'}
+                </span>
               </div>
             ) : (
               <Button onClick={saveAndContinue}>

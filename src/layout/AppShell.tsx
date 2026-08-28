@@ -6,7 +6,7 @@ import {
   ChefHat, Package, Trash2, DollarSign, Users, BarChart2, Settings, Menu, X,
   Bell, Megaphone, LogOut, Sparkles,
 } from 'lucide-react';
-import { storage } from '../lib/storage';
+import { storage, resetCache } from '../lib/storage';
 import { authClient } from '../lib/authClient';
 
 const NAV = [
@@ -46,6 +46,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 
   function handleLogout() {
     authClient.logout();
+    resetCache();
     navigate('/login', { replace: true });
   }
 

@@ -45,10 +45,10 @@ export default function DynamicPricingPage() {
     );
   }
 
-  function applyRecommendation(rec: PricingRecommendation) {
+  async function applyRecommendation(rec: PricingRecommendation) {
     const currentMenu = storage.getMenu();
     const updated = currentMenu.map(m => m.id === rec.dishId ? { ...m, sellingPrice: rec.recommendedPrice } : m);
-    storage.setMenu(updated);
+    await storage.setMenu(updated);
     setAppliedIds(prev => new Set([...prev, rec.dishId]));
     setSelectedRec(null);
   }

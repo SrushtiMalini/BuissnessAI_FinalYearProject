@@ -90,8 +90,8 @@ export default function DashboardPage() {
   const insights = useMemo(() => computeInsights(kpis, weekly, topDishes, quadrant), [kpis, weekly, topDishes, quadrant]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>(() => storage.getOpportunities());
 
-  function handleOpportunityAction(id: string, status: 'acted_on' | 'dismissed') {
-    storage.updateOpportunityStatus(id, status);
+  async function handleOpportunityAction(id: string, status: 'acted_on' | 'dismissed') {
+    await storage.updateOpportunityStatus(id, status);
     setOpportunities(storage.getOpportunities());
   }
 

@@ -84,8 +84,8 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 1800);
   }
 
-  function clearAllData() {
-    storage.clearAll();
+  async function clearAllData() {
+    await storage.clearAll();
     navigate('/');
   }
 

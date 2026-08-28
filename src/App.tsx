@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppShell from './layout/AppShell';
 import OnboardingPage from './pages/OnboardingPage';
@@ -17,8 +18,32 @@ import IngredientForecastPage from './pages/ml/IngredientForecastPage';
 import WorkforcePlanningPage from './pages/ml/WorkforcePlanningPage';
 import DynamicPricingPage from './pages/ml/DynamicPricingPage';
 import PromotionAnalysisPage from './pages/ml/PromotionAnalysisPage';
-import { storage } from './lib/storage';
+import { storage, hydrate } from './lib/storage';
 import { authClient } from './lib/authClient';
+
+// Re-populates the in-memory billing/menu/reports/opportunities cache from the server
+// on every app boot (page refresh, direct URL nav) — without this, a refresh would
+// briefly (and then permanently, since nothing re-triggers it) show stale/empty data
+// even though the server copy is intact.
+function HydrateGate({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(() => !authClient.isAuthenticated());
+
+  useEffect(() => {
+    if (!authClient.isAuthenticated()) return;
+    let cancelled = false;
+    hydrate().finally(() => { if (!cancelled) setReady(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+        <div className="w-8 h-8 border-2 border-[var(--color-unity)] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 function RequireAuth({ children }: { children: ReactNode }) {
   if (!authClient.isAuthenticated()) return <Navigate to="/login" replace />;
@@ -44,6 +69,7 @@ function AppLayout({ children }: { children: ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <HydrateGate>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
@@ -67,6 +93,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </HydrateGate>
     </BrowserRouter>
   );
 }

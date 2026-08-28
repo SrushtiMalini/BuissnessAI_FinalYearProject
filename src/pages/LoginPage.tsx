@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChefHat } from 'lucide-react';
 import { authClient } from '../lib/authClient';
+import { hydrate } from '../lib/storage';
 import { Button } from '../components/ui';
 
 export default function LoginPage() {
@@ -23,6 +24,7 @@ export default function LoginPage() {
     try {
       const auth = await authClient.login(email, password);
       authClient.saveSession(auth);
+      await hydrate();
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.message ?? 'Login failed');

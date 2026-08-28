@@ -103,7 +103,7 @@ export default function ReportPage() {
         aiText: result.text,
         type,
       };
-      storage.appendReport(report);
+      await storage.appendReport(report);
       setReports(storage.getReports());
     } finally {
       setGenerating(null);

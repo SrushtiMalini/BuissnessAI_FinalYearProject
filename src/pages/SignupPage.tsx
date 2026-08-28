@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChefHat } from 'lucide-react';
 import { authClient } from '../lib/authClient';
+import { hydrate } from '../lib/storage';
 import { Button } from '../components/ui';
 
 export default function SignupPage() {
@@ -30,6 +31,7 @@ export default function SignupPage() {
     try {
       const auth = await authClient.signup(form.name, form.email, form.password);
       authClient.saveSession(auth);
+      await hydrate();
       navigate('/');
     } catch (err: any) {
       setError(err.message ?? 'Signup failed');

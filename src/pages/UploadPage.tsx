@@ -47,11 +47,11 @@ export default function UploadPage() {
         if (status.success && status.timestamp && status.entries?.length) {
           const key = autoImportAppliedKey();
           if (localStorage.getItem(key) !== status.timestamp) {
-            storage.appendBilling(status.entries);
+            await storage.appendBilling(status.entries);
             const fullBilling = storage.getBilling();
             const menu = buildMenuFromBilling(fullBilling, storage.getMenu());
-            storage.setMenu(menu);
-            generateOpportunities(fullBilling, menu);
+            await storage.setMenu(menu);
+            await generateOpportunities(fullBilling, menu);
             localStorage.setItem(key, status.timestamp);
           }
         }
@@ -124,17 +124,17 @@ export default function UploadPage() {
     if (file) handleFile(file);
   }, [handleFile]);
 
-  function saveAndContinue() {
+  async function saveAndContinue() {
     if (!result?.entries.length) return;
-    const { added, total, ok } = storage.appendBilling(result.entries);
+    const { added, total, ok } = await storage.appendBilling(result.entries);
     if (!ok) {
-      setError('Browser storage limit was exceeded.');
+      setError('Could not reach the server to save your data. Please try again.');
       return;
     }
     const fullBilling = storage.getBilling();
     const menu = buildMenuFromBilling(fullBilling, storage.getMenu());
-    storage.setMenu(menu);
-    generateOpportunities(fullBilling, menu);
+    await storage.setMenu(menu);
+    await generateOpportunities(fullBilling, menu);
     setSaveSummary({ added, total });
     setSaved(true);
     setTimeout(() => navigate('/menu'), 800);

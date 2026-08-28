@@ -43,8 +43,8 @@ export default function MenuPage() {
     setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
   }
 
-  function save() {
-    storage.setMenu(items.filter(i => i.name.trim()));
+  async function save() {
+    await storage.setMenu(items.filter(i => i.name.trim()));
     setSaved(true);
     setTimeout(() => { setSaved(false); navigate('/dashboard'); }, 1000);
   }

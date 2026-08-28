@@ -228,7 +228,7 @@ export function scoreOf(o: Pick<Opportunity, 'projectedImpact' | 'confidence'>):
  * expires stale "new" opportunities, and resolves outcomes for "acted_on" ones that
  * are old enough to measure. Call this once after any billing data save/import.
  */
-export function generateOpportunities(billing: BillingEntry[], menu: MenuItem[]): Opportunity[] {
+export async function generateOpportunities(billing: BillingEntry[], menu: MenuItem[]): Promise<Opportunity[]> {
   const existing = storage.getOpportunities();
   const today = todayISO();
 
@@ -296,6 +296,6 @@ export function generateOpportunities(billing: BillingEntry[], menu: MenuItem[])
   }));
 
   const finalList = [...withOutcomes, ...newOpportunities];
-  storage.setOpportunities(finalList);
+  await storage.setOpportunities(finalList);
   return finalList;
 }

@@ -1,8 +1,24 @@
+export type EstablishmentType = 'dhaba' | 'qsr' | 'cafe' | 'fine-dine' | 'cloud-kitchen' | 'other';
+export type MealPeriodOffered = 'breakfast' | 'lunch' | 'dinner';
+export type TrackingMethod = 'pos' | 'manual' | 'none';
+export type BusinessPriority =
+  | 'reducing-food-waste'
+  | 'pricing-dishes'
+  | 'staffing-scheduling'
+  | 'understanding-sales'
+  | 'all';
+
 export interface Restaurant {
   name: string;
   ownerName: string;
   city: string;
-  revenueRange: string;
+  cuisine: string;
+  establishmentType: EstablishmentType;
+  daysOpenPerWeek: number;
+  mealPeriods: MealPeriodOffered[];
+  trackingMethod: TrackingMethod;
+  posName?: string;
+  priorities: BusinessPriority[];
 }
 
 export interface MenuItem {

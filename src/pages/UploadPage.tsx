@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { DragEvent, ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, FileText, CheckCircle, AlertCircle, Info, Download, ChevronDown, ChevronRight, FolderSync } from 'lucide-react';
-import { parseCSV, generateSampleCSV, type ParseProgress, type ParseResult } from '../lib/csvParser';
+import { Upload, FileText, CheckCircle, AlertCircle, Info, ChevronDown, ChevronRight, FolderSync } from 'lucide-react';
+import { parseCSV, type ParseProgress, type ParseResult } from '../lib/csvParser';
 import { storage } from '../lib/storage';
 import { buildMenuFromBilling } from '../lib/menuEngine';
 import { importClient, type ImportStatus } from '../lib/importClient';
@@ -116,10 +116,6 @@ export default function UploadPage() {
     if (file) handleFile(file);
   }, [handleFile]);
 
-  function loadSample() {
-    processFile(generateSampleCSV());
-  }
-
   function saveAndContinue() {
     if (!result?.entries.length) return;
     const ok = storage.setBilling(result.entries);
@@ -133,22 +129,11 @@ export default function UploadPage() {
     setTimeout(() => navigate('/menu'), 800);
   }
 
-  function downloadSample() {
-    const csv = generateSampleCSV();
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'sample_billing.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   return (
     <div className="max-w-3xl mx-auto">
       <PageHeader
         title="Upload Billing Data"
-        subtitle="Upload your POS export or use sample data to get started"
+        subtitle="Upload your POS export to get started"
       />
 
       {importStatus?.timestamp && (
@@ -173,15 +158,6 @@ export default function UploadPage() {
           <p className="text-white font-medium mb-1">Drop your CSV file here</p>
           <p className="text-gray-500 text-sm">Supports exports from Petpooja, Poster POS, or any CSV with date + dish columns</p>
           <input ref={inputRef} type="file" accept=".csv,.txt" className="hidden" onChange={(e: ChangeEvent<HTMLInputElement>) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-        </div>
-
-        <div className="flex gap-3 mt-4">
-          <Button variant="secondary" onClick={loadSample} className="flex-1 justify-center">
-            Use Sample Data (30 days)
-          </Button>
-          <Button variant="secondary" onClick={downloadSample} className="flex-1 justify-center">
-            <Download size={14} /> Download Sample CSV
-          </Button>
         </div>
 
         <div className="border-t border-[#30363D] mt-4 pt-4">

@@ -194,31 +194,3 @@ export function parseCSV(
     processBatch();
   });
 }
-
-export function generateSampleCSV(): string {
-  const dishes = ['Dal Fry', 'Paneer Butter Masala', 'Veg Thali', 'Rajma Chawal', 'Egg Curry', 'Roti', 'Jeera Rice'];
-  const prices: Record<string, number> = {
-    'Dal Fry': 80, 'Paneer Butter Masala': 160, 'Veg Thali': 120,
-    'Rajma Chawal': 90, 'Egg Curry': 100, 'Roti': 15, 'Jeera Rice': 60,
-  };
-  const rows = ['date,time,dish_name,quantity,selling_price,meal_period'];
-  const today = new Date();
-  for (let d = 29; d >= 0; d--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - d);
-    const dateStr = date.toISOString().slice(0, 10);
-    const periods = [
-      { time: '08:30', period: 'breakfast', count: 3 },
-      { time: '13:00', period: 'lunch', count: 8 },
-      { time: '19:30', period: 'dinner', count: 6 },
-    ];
-    for (const { time, period, count } of periods) {
-      const shuffled = [...dishes].sort(() => Math.random() - 0.5).slice(0, count);
-      for (const dish of shuffled) {
-        const qty = Math.floor(Math.random() * 8) + 1;
-        rows.push(`${dateStr},${time},${dish},${qty},${prices[dish]},${period}`);
-      }
-    }
-  }
-  return rows.join('\n');
-}

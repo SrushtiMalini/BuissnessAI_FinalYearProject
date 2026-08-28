@@ -389,6 +389,16 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
   );
 }
 
+// ─── IconTitle (icon + label, for Card `title` props) ────────────────────────
+
+export function IconTitle(icon: ReactNode, label: string): ReactNode {
+  return (
+    <span className="flex items-center gap-2">
+      <span className="text-[var(--color-text-muted)]">{icon}</span> {label}
+    </span>
+  );
+}
+
 // ─── Pill (toggle button, for single/multi-select option groups) ─────────────
 
 interface PillProps {

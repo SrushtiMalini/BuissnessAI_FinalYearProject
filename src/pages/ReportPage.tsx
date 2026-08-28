@@ -1,14 +1,24 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Sun, Moon, Upload, ChevronLeft, ChevronRight, BarChart3, Sparkles } from 'lucide-react';
+import {
+  Sun, Moon, Upload, ChevronLeft, ChevronRight, BarChart3, Sparkles,
+  Clock, Trophy, PieChart as PieChartIcon, TrendingUp,
+} from 'lucide-react';
 import { storage } from '../lib/storage';
 import { generateDailyReport } from '../lib/reportGenerator';
-import { getDailySummaries } from '../lib/analytics';
-import { Button, Card, Badge, EmptyState, PageHeader, Alert, formInputClass } from '../design-system/components';
+import { getDailySummaries, getPeakHours, getTopDishes, getMealPeriodSplit } from '../lib/analytics';
+import { Button, Card, Badge, EmptyState, PageHeader, Alert, formInputClass, IconTitle } from '../design-system/components';
+import { BarChart, DonutChart, LineChart, CHART_COLORS } from '../design-system/charts';
 import type { Report } from '../types';
 
 function fmtCurrency(n: number): string {
   return `₹${Math.round(n).toLocaleString('en-IN')}`;
+}
+
+function fmtShortDate(d: unknown): string {
+  if (typeof d !== 'string') return '';
+  const date = new Date(d);
+  return `${date.getDate()}/${date.getMonth() + 1}`;
 }
 
 export default function ReportPage() {
@@ -30,6 +40,26 @@ export default function ReportPage() {
     }
   }, [availableDates, selectedDate]);
 
+  // Everything below is scoped to just this date's billing rows — same functions Dashboard uses, just fed a narrower slice.
+  // (All hooks must run unconditionally, before the no-data early return below.)
+  const dateEntries = useMemo(() => billing.filter(e => e.date === selectedDate), [billing, selectedDate]);
+  const hourlyData = useMemo(() => getPeakHours(dateEntries), [dateEntries]);
+  const dishRevenueData = useMemo(() => getTopDishes(dateEntries, 8), [dateEntries]);
+  const mealSplitForDate = useMemo(() => getMealPeriodSplit(dateEntries), [dateEntries]);
+  const mealPieDataForDate = useMemo(() => [
+    { name: 'Breakfast', value: mealSplitForDate.breakfast },
+    { name: 'Lunch', value: mealSplitForDate.lunch },
+    { name: 'Dinner', value: mealSplitForDate.dinner },
+    { name: 'Other', value: mealSplitForDate.other },
+  ].filter(d => d.value > 0), [mealSplitForDate]);
+  const trendWindow = useMemo(() => {
+    const idx = summaries.findIndex(s => s.date === selectedDate);
+    if (idx === -1) return [];
+    const start = Math.max(0, idx - 3);
+    const end = Math.min(summaries.length, idx + 4);
+    return summaries.slice(start, end).map(s => ({ date: s.date, revenue: s.totalRevenue }));
+  }, [summaries, selectedDate]);
+
   if (!billing.length) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -46,6 +76,9 @@ export default function ReportPage() {
   const dateIndex = availableDates.indexOf(selectedDate);
   const selectedSummary = summaries.find(s => s.date === selectedDate) ?? null;
   const dateReports = reports.filter(r => r.date === selectedDate);
+  const hasHourlyData = hourlyData.some(h => h.orders > 0);
+  const windowAvg = trendWindow.length ? trendWindow.reduce((s, d) => s + d.revenue, 0) / trendWindow.length : 0;
+  const trendDiffPct = windowAvg > 0 ? (((selectedSummary?.totalRevenue ?? 0) - windowAvg) / windowAvg) * 100 : 0;
 
   function goToDate(offset: number) {
     const next = availableDates[dateIndex + offset];
@@ -78,7 +111,7 @@ export default function ReportPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-5xl mx-auto">
       <PageHeader
         title="Business Reports"
         subtitle="Real data for any date — AI commentary is optional and grounded in that data"
@@ -145,6 +178,76 @@ export default function ReportPage() {
             </div>
           )}
         </Card>
+      )}
+
+      {/* Visual breakdown — all computed from this date's billing rows only, zero AI involvement */}
+      {selectedSummary && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <Card title={IconTitle(<Clock size={16} />, 'Hourly Sales')} subtitle="Orders by hour on this date">
+            {hasHourlyData ? (
+              <BarChart
+                data={hourlyData.filter(h => h.orders > 0)}
+                bars={[{ key: 'orders', name: 'Orders', color: CHART_COLORS[1] }]}
+                xKey="hour"
+                height={200}
+                xFormatter={v => `${v}:00`}
+                tooltipFormatter={(v) => [`${v} orders`, 'Orders']}
+              />
+            ) : (
+              <EmptyState title="No hourly data" description="This date has no time-stamped orders." />
+            )}
+          </Card>
+
+          <Card title={IconTitle(<Trophy size={16} />, 'Top Dishes')} subtitle="Revenue by dish on this date">
+            {dishRevenueData.length > 0 ? (
+              <BarChart
+                data={dishRevenueData}
+                bars={[{ key: 'revenue', name: 'Revenue', color: CHART_COLORS[0] }]}
+                xKey="name"
+                layout="vertical"
+                height={Math.max(160, dishRevenueData.length * 32)}
+                xFormatter={v => `₹${(Number(v) / 1000).toFixed(0)}k`}
+                tooltipFormatter={(v) => [fmtCurrency(v), 'Revenue']}
+              />
+            ) : (
+              <EmptyState title="No dishes sold" description="No billing rows found for this date." />
+            )}
+          </Card>
+
+          <Card title={IconTitle(<PieChartIcon size={16} />, 'Meal Period Split')} subtitle="Revenue share on this date">
+            {mealPieDataForDate.length > 0 ? (
+              <DonutChart data={mealPieDataForDate} height={200} formatter={fmtCurrency} />
+            ) : (
+              <EmptyState title="No meal period data" description="This date has no meal-period-tagged orders." />
+            )}
+          </Card>
+
+          <Card
+            title={IconTitle(<TrendingUp size={16} />, '7-Day Trend')}
+            subtitle="Revenue vs the surrounding week"
+            action={
+              windowAvg > 0 ? (
+                <Badge variant={trendDiffPct >= 0 ? 'success' : 'danger'} dot>
+                  {trendDiffPct >= 0 ? '+' : ''}{trendDiffPct.toFixed(1)}% vs 7-day avg
+                </Badge>
+              ) : undefined
+            }
+          >
+            {trendWindow.length > 1 ? (
+              <LineChart
+                data={trendWindow}
+                lines={[{ key: 'revenue', name: 'Revenue', color: CHART_COLORS[0] }]}
+                xKey="date"
+                height={200}
+                xFormatter={fmtShortDate}
+                yFormatter={v => `₹${(v / 1000).toFixed(0)}k`}
+                tooltipFormatter={(v, name) => [fmtCurrency(v), name]}
+              />
+            ) : (
+              <EmptyState title="Not enough surrounding data" description="Need at least one neighboring day to show a trend." />
+            )}
+          </Card>
+        </div>
       )}
 
       {/* AI Strategy Note — optional commentary, failures are isolated to this section */}

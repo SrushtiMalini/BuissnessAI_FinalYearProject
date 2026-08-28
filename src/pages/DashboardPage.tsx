@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Upload, TrendingUp, ShoppingBag, Percent, Activity, Lightbulb,
@@ -11,7 +10,7 @@ import {
   getMealPeriodSplit, getWeeklyComparison, computeKPIs, getPeakHours,
 } from '../lib/analytics';
 import { computeDishMetrics, classifyMenu } from '../lib/menuEngine';
-import { MetricTile, Card, Badge, EmptyState, Button, DataTable } from '../design-system/components';
+import { MetricTile, Card, Badge, EmptyState, Button, DataTable, IconTitle } from '../design-system/components';
 import { AreaChart, BarChart, DonutChart } from '../design-system/charts';
 import { CHART_COLORS } from '../design-system/charts';
 
@@ -32,14 +31,6 @@ function fmtShortDate(d: unknown): string {
   if (typeof d !== 'string') return '';
   const date = new Date(d);
   return `${date.getDate()}/${date.getMonth() + 1}`;
-}
-
-function sectionTitle(icon: ReactNode, label: string) {
-  return (
-    <span className="flex items-center gap-2">
-      <span className="text-[var(--color-text-muted)]">{icon}</span> {label}
-    </span>
-  );
 }
 
 // Plain computed callouts — no AI involved, just thresholds/derivations over the same data the KPI tiles use.
@@ -191,7 +182,7 @@ export default function DashboardPage() {
 
       {/* Menu Health */}
       <Card
-        title={sectionTitle(<Layers size={16} />, 'Menu Health')}
+        title={IconTitle(<Layers size={16} />, 'Menu Health')}
         subtitle="Profitability classification across your menu"
         action={<Link to="/menu" className="text-[var(--text-xs)] font-medium text-[var(--color-unity)] hover:underline">View Menu →</Link>}
       >
@@ -209,7 +200,7 @@ export default function DashboardPage() {
       </Card>
 
       {/* Revenue trend */}
-      <Card title={sectionTitle(<TrendingUp size={16} />, 'Revenue — Last 30 Days')} subtitle="Revenue and gross profit trend">
+      <Card title={IconTitle(<TrendingUp size={16} />, 'Revenue — Last 30 Days')} subtitle="Revenue and gross profit trend">
         <AreaChart
           data={revenueByDay}
           areas={[
@@ -226,7 +217,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top dishes table */}
-        <Card title={sectionTitle(<Trophy size={16} />, 'Top Dishes by Revenue')} subtitle="All-time performance">
+        <Card title={IconTitle(<Trophy size={16} />, 'Top Dishes by Revenue')} subtitle="All-time performance">
           <DataTable
             columns={topDishColumns as any}
             data={topDishes.map((d, i) => ({ ...d, rank: i + 1 })) as any}
@@ -235,7 +226,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Meal period split */}
-        <Card title={sectionTitle(<PieChartIcon size={16} />, 'Revenue by Meal Period')}>
+        <Card title={IconTitle(<PieChartIcon size={16} />, 'Revenue by Meal Period')}>
           {mealPieData.length > 0 ? (
             <DonutChart
               data={mealPieData}
@@ -253,7 +244,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Weekly comparison */}
-        <Card title={sectionTitle(<CalendarDays size={16} />, 'This Week vs Last Week')}>
+        <Card title={IconTitle(<CalendarDays size={16} />, 'This Week vs Last Week')}>
           <div className="space-y-3 pt-2">
             {[
               { label: 'This week', value: fmtCurrency(weekly.thisWeek), highlight: true },
@@ -277,7 +268,7 @@ export default function DashboardPage() {
 
         {/* Peak hours */}
         {peakHours.length > 0 ? (
-          <Card title={sectionTitle(<Clock size={16} />, 'Peak Hours')} subtitle="Order volume by hour" className="lg:col-span-2">
+          <Card title={IconTitle(<Clock size={16} />, 'Peak Hours')} subtitle="Order volume by hour" className="lg:col-span-2">
             <BarChart
               data={peakHours.filter(h => h.orders > 0).slice(6, 23)}
               bars={[{ key: 'orders', name: 'Orders', color: CHART_COLORS[1] }]}
@@ -288,7 +279,7 @@ export default function DashboardPage() {
             />
           </Card>
         ) : (
-          <Card title={sectionTitle(<Clock size={16} />, 'Peak Hours')} className="lg:col-span-2">
+          <Card title={IconTitle(<Clock size={16} />, 'Peak Hours')} className="lg:col-span-2">
             <EmptyState
               title="No time data"
               description="Upload data with time column to see peak hour analysis."

@@ -11,6 +11,7 @@ import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
 import { db } from "./db.ts";
 import type { RestaurantRow } from "./db.ts";
+import { runImport, getLastStatus, watchIncoming } from "./importPipeline.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -168,6 +169,33 @@ async function startServer() {
       console.error("Login error:", err.message);
       res.status(500).json({ error: err.message ?? "Login failed" });
     }
+  });
+
+  // Auto-import status (last file-watcher or manual-trigger result)
+  app.get("/api/import/status", (_req, res) => {
+    res.json(getLastStatus());
+  });
+
+  // Manual "Import Today's Sales" trigger — runs the same pipeline the folder watcher uses
+  app.post("/api/import/trigger", async (_req, res) => {
+    try {
+      const status = await runImport();
+      if (!status) {
+        return res.json({ found: false, message: "No new export found in the watched folder." });
+      }
+      res.json({ found: true, status });
+    } catch (err: any) {
+      console.error("Manual import trigger error:", err.message);
+      res.status(500).json({ error: err.message ?? "Import failed" });
+    }
+  });
+
+  watchIncoming(status => {
+    console.log(
+      status.success
+        ? `Auto-imported ${status.filename}: ${status.rowsImported} rows`
+        : `Auto-import failed for ${status.filename}: ${status.message}`
+    );
   });
 
   // Daily report / morning brief endpoint

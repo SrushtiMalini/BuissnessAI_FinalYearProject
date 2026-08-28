@@ -1,34 +1,105 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { DragEvent, ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, FileText, CheckCircle, AlertCircle, Download } from 'lucide-react';
-import { parseCSV, generateSampleCSV, type ParseProgress } from '../lib/csvParser';
+import { Upload, FileText, CheckCircle, AlertCircle, Info, Download, ChevronDown, ChevronRight, FolderSync } from 'lucide-react';
+import { parseCSV, generateSampleCSV, type ParseProgress, type ParseResult } from '../lib/csvParser';
 import { storage } from '../lib/storage';
 import { buildMenuFromBilling } from '../lib/menuEngine';
+import { importClient, type ImportStatus } from '../lib/importClient';
 import { Button, Card, PageHeader } from '../components/ui';
-import type { BillingEntry } from '../types';
+
+const ISSUES_DISPLAY_CAP = 200;
+const AUTO_IMPORT_APPLIED_KEY_BASE = 'biq_auto_import_applied_at';
+const AUTO_IMPORT_POLL_MS = 5000;
+
+function autoImportAppliedKey(): string {
+  const restaurantId = localStorage.getItem('biq_restaurant_id') ?? 'anon';
+  return `${AUTO_IMPORT_APPLIED_KEY_BASE}_${restaurantId}`;
+}
 
 export default function UploadPage() {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<ParseProgress | null>(null);
-  const [result, setResult] = useState<{ entries: BillingEntry[]; errors: string[]; totalRows: number } | null>(null);
+  const [result, setResult] = useState<ParseResult | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [issuesOpen, setIssuesOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
+  const [autoImportLoading, setAutoImportLoading] = useState(false);
+  const [autoImportMessage, setAutoImportMessage] = useState('');
+
+  // Poll the auto-import status; silently apply a freshly-detected folder-watch import
+  // via the same storage.setBilling + buildMenuFromBilling path the manual upload uses.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const status = await importClient.getStatus();
+        if (cancelled) return;
+        setImportStatus(status);
+
+        if (status.success && status.timestamp && status.entries?.length) {
+          const key = autoImportAppliedKey();
+          if (localStorage.getItem(key) !== status.timestamp) {
+            storage.setBilling(status.entries);
+            storage.setMenu(buildMenuFromBilling(status.entries, []));
+            localStorage.setItem(key, status.timestamp);
+          }
+        }
+      } catch {
+        // status polling is best-effort; ignore transient failures
+      }
+    }
+
+    poll();
+    const interval = setInterval(poll, AUTO_IMPORT_POLL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  async function handleAutoImportTrigger() {
+    setAutoImportMessage('');
+    setAutoImportLoading(true);
+    try {
+      const res = await importClient.trigger();
+      if (!res.found) {
+        setAutoImportMessage(res.message ?? 'No new export found in the watched folder.');
+      } else if (res.status?.success && res.status.entries) {
+        setResult({
+          entries: res.status.entries,
+          issues: res.status.issues ?? [],
+          errors: [],
+          totalRows: res.status.entries.length,
+        });
+        setSaved(false);
+        setError('');
+        setImportStatus(res.status);
+      } else {
+        setAutoImportMessage(res.status?.message ?? 'Import failed — see data/incoming/failed for details.');
+        setImportStatus(res.status ?? null);
+      }
+    } catch (err: any) {
+      setAutoImportMessage(err.message ?? 'Import failed');
+    } finally {
+      setAutoImportLoading(false);
+    }
+  }
 
   const processFile = useCallback(async (text: string) => {
     setError('');
     setResult(null);
     setSaved(false);
+    setIssuesOpen(false);
     setProgress({ processed: 0, total: 1, pct: 0 });
 
     const res = await parseCSV(text, p => setProgress(p));
     setProgress(null);
     setResult(res);
 
-    if (res.errors.length && !res.entries.length) {
-      setError(res.errors[0]);
+    if (!res.entries.length) {
+      setError(res.errors[0] ?? 'No valid rows found — see Import Issues below.');
     }
   }, []);
 
@@ -80,6 +151,14 @@ export default function UploadPage() {
         subtitle="Upload your POS export or use sample data to get started"
       />
 
+      {importStatus?.timestamp && (
+        <p className="text-gray-500 text-xs mb-3 flex items-center gap-1.5">
+          <FolderSync size={12} />
+          Last auto-import: {new Date(importStatus.timestamp).toLocaleString()} ·{' '}
+          {importStatus.success ? `${importStatus.rowsImported} rows` : 'failed'} ({importStatus.filename})
+        </p>
+      )}
+
       <Card className="mb-4">
         <div
           className={`border-2 border-dashed rounded-xl p-10 text-center transition-colors cursor-pointer ${
@@ -103,6 +182,21 @@ export default function UploadPage() {
           <Button variant="secondary" onClick={downloadSample} className="flex-1 justify-center">
             <Download size={14} /> Download Sample CSV
           </Button>
+        </div>
+
+        <div className="border-t border-[#30363D] mt-4 pt-4">
+          <Button onClick={handleAutoImportTrigger} loading={autoImportLoading} className="w-full justify-center">
+            <FolderSync size={14} /> Import Today's Sales
+          </Button>
+          <p className="text-gray-500 text-xs mt-2 text-center">
+            Checks data/incoming/ for a POS export that hasn't been imported yet
+          </p>
+          {autoImportMessage && (
+            <div className="flex items-center gap-2 text-gray-400 text-sm mt-2 justify-center">
+              <Info size={14} className="shrink-0" />
+              <span>{autoImportMessage}</span>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -131,7 +225,7 @@ export default function UploadPage() {
             <div><p className="text-[#4ADE80] font-bold text-xl">{result.entries.length.toLocaleString()}</p><p className="text-gray-400 text-xs">Rows imported</p></div>
             <div><p className="text-white font-bold text-xl">{[...new Set(result.entries.map(e => e.date))].length}</p><p className="text-gray-400 text-xs">Days of data</p></div>
             <div><p className="text-white font-bold text-xl">{[...new Set(result.entries.map(e => e.dishName))].length}</p><p className="text-gray-400 text-xs">Unique dishes</p></div>
-            {result.errors.length > 0 && <div><p className="text-amber-400 font-bold text-xl">{result.errors.length}</p><p className="text-gray-400 text-xs">Skipped rows</p></div>}
+            {result.issues.length > 0 && <div><p className="text-amber-400 font-bold text-xl">{result.issues.length}</p><p className="text-gray-400 text-xs">Flagged rows</p></div>}
           </div>
 
           <div className="overflow-x-auto">
@@ -169,6 +263,48 @@ export default function UploadPage() {
               </Button>
             )}
           </div>
+        </Card>
+      )}
+
+      {result && result.issues.length > 0 && (
+        <Card className="mb-4">
+          <button
+            className="flex items-center justify-between w-full text-left"
+            onClick={() => setIssuesOpen(o => !o)}
+          >
+            <span className="flex items-center gap-2 text-amber-400 font-medium text-sm">
+              <AlertCircle size={16} />
+              Import Issues ({result.issues.length})
+            </span>
+            {issuesOpen ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
+          </button>
+
+          {issuesOpen && (
+            <div className="mt-4 overflow-x-auto max-h-96 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[#30363D]">
+                    {['Row', 'Type', 'Raw Values', 'Reason'].map(h => (
+                      <th key={h} className="text-left text-gray-400 font-medium pb-2 pr-4">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.issues.slice(0, ISSUES_DISPLAY_CAP).map((issue, i) => (
+                    <tr key={i} className="border-b border-[#30363D]/40">
+                      <td className="py-1.5 pr-4 text-gray-300">{issue.rowNumber}</td>
+                      <td className={`py-1.5 pr-4 capitalize ${issue.type === 'error' ? 'text-red-400' : 'text-amber-400'}`}>{issue.type}</td>
+                      <td className="py-1.5 pr-4 text-gray-400 font-mono">{issue.rawValues.join(', ')}</td>
+                      <td className="py-1.5 text-gray-300">{issue.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {result.issues.length > ISSUES_DISPLAY_CAP && (
+                <p className="text-gray-500 text-xs mt-2">+{result.issues.length - ISSUES_DISPLAY_CAP} more issues not shown</p>
+              )}
+            </div>
+          )}
         </Card>
       )}
 

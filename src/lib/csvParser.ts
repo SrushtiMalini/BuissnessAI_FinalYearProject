@@ -1,8 +1,16 @@
 import type { BillingEntry } from '../types';
 
+export interface RowIssue {
+  rowNumber: number;
+  rawValues: string[];
+  reason: string;
+  type: 'error' | 'warning';
+}
+
 export interface ParseResult {
   entries: BillingEntry[];
   errors: string[];
+  issues: RowIssue[];
   totalRows: number;
 }
 
@@ -37,23 +45,22 @@ function detectDelimiter(sample: string): string {
   return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
 }
 
-function normaliseDate(raw: string): string | null {
+function normaliseDate(raw: string): { date: string; ambiguous: boolean } | null {
   if (!raw) return null;
   // Try ISO
-  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
-  // DD/MM/YYYY or DD-MM-YYYY
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return { date: raw.slice(0, 10), ambiguous: false };
+  // DD/MM/YYYY or DD-MM-YYYY (assumed)
   const dmy = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (dmy) {
     const [, d, m, y] = dmy;
+    const day = parseInt(d, 10);
+    const month = parseInt(m, 10);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
     const year = y.length === 2 ? `20${y}` : y;
-    return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-  // MM/DD/YYYY
-  const mdy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (mdy) {
-    const [, m, d, y] = mdy;
-    const year = y.length === 2 ? `20${y}` : y;
-    return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    return {
+      date: `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`,
+      ambiguous: day <= 12 && month <= 12 && day !== month,
+    };
   }
   return null;
 }
@@ -88,7 +95,7 @@ export function parseCSV(
   return new Promise(resolve => {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (lines.length < 2) {
-      resolve({ entries: [], errors: ['File appears empty or has only a header.'], totalRows: 0 });
+      resolve({ entries: [], errors: ['File appears empty or has only a header.'], issues: [], totalRows: 0 });
       return;
     }
 
@@ -103,13 +110,14 @@ export function parseCSV(
           `Could not find required columns. Found: ${headers.join(', ')}. ` +
           'Need at least a date column and a dish/item name column.',
         ],
+        issues: [],
         totalRows: 0,
       });
       return;
     }
 
     const entries: BillingEntry[] = [];
-    const errors: string[] = [];
+    const issues: RowIssue[] = [];
     const dataLines = lines.slice(1);
     const total = dataLines.length;
     const BATCH = 500;
@@ -125,25 +133,37 @@ export function parseCSV(
         const cols = line.match(/(".*?"|[^",\t;|]+|(?<=,)(?=,)|(?<=^)(?=,))/g) ?? line.split(delimiter);
         const clean = cols.map(c => c.replace(/^["']|["']$/g, '').trim());
 
+        const rowNumber = i + 2;
         const rawDate = clean[colMap.date];
-        const date = normaliseDate(rawDate);
-        if (!date) {
-          errors.push(`Row ${i + 2}: invalid date "${rawDate}"`);
+        const normalised = normaliseDate(rawDate);
+        if (!normalised) {
+          issues.push({ rowNumber, rawValues: clean, reason: `invalid date format ("${rawDate}")`, type: 'error' });
           continue;
+        }
+        const date = normalised.date;
+        if (normalised.ambiguous) {
+          issues.push({ rowNumber, rawValues: clean, reason: `ambiguous date ("${rawDate}"), assumed DD/MM`, type: 'warning' });
         }
 
         const dishName = clean[colMap.dishName ?? -1]?.trim();
         if (!dishName) {
-          errors.push(`Row ${i + 2}: missing dish name`);
+          issues.push({ rowNumber, rawValues: clean, reason: 'missing dish name', type: 'error' });
           continue;
         }
 
         const quantity = colMap.quantity !== undefined
           ? parseFloat(clean[colMap.quantity]) || 1
           : 1;
-        const sellingPrice = colMap.sellingPrice !== undefined
-          ? parseFloat(clean[colMap.sellingPrice]?.replace(/[₹,\s]/g, '')) || 0
-          : 0;
+
+        let sellingPrice = 0;
+        if (colMap.sellingPrice !== undefined) {
+          const rawPrice = clean[colMap.sellingPrice];
+          const parsedPrice = parseFloat(rawPrice?.replace(/[₹,\s]/g, ''));
+          sellingPrice = Number.isFinite(parsedPrice) ? parsedPrice : 0;
+          if (rawPrice && !Number.isFinite(parsedPrice)) {
+            issues.push({ rowNumber, rawValues: clean, reason: `non-numeric price ("${rawPrice}")`, type: 'warning' });
+          }
+        }
 
         const time = colMap.time !== undefined ? clean[colMap.time] : undefined;
         const mealPeriodRaw = colMap.mealPeriod !== undefined ? clean[colMap.mealPeriod]?.toLowerCase() : undefined;
@@ -167,7 +187,7 @@ export function parseCSV(
       if (i < total) {
         setTimeout(processBatch, 0);
       } else {
-        resolve({ entries, errors: errors.slice(0, 20), totalRows: total });
+        resolve({ entries, errors: [], issues, totalRows: total });
       }
     }
 

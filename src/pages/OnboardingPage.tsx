@@ -71,7 +71,10 @@ export default function OnboardingPage() {
     if (step > 0) setStep(s => s - 1);
   }
 
-  function submit() {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  async function submit() {
     const restaurant: Restaurant = {
       name: form.name.trim(),
       ownerName: form.ownerName.trim(),
@@ -84,8 +87,17 @@ export default function OnboardingPage() {
       posName: form.trackingMethod === 'pos' ? form.posName.trim() : undefined,
       priorities: form.priorities,
     };
-    storage.setRestaurant(restaurant);
-    navigate('/upload');
+    setSaving(true);
+    setSaveError('');
+    const ok = await storage.setRestaurant(restaurant);
+    setSaving(false);
+    if (!ok) {
+      setSaveError('Could not save your restaurant profile. Please try again.');
+      return;
+    }
+    // Menu setup is the next mandatory step — Upload Data stays blocked until at
+    // least one menu item exists (see RequireMenu in App.tsx).
+    navigate('/menu');
   }
 
   return (
@@ -240,6 +252,7 @@ export default function OnboardingPage() {
                 } />
                 <ReviewRow label="Priorities" value={form.priorities.map(v => PRIORITIES.find(p => p.value === v)?.label).join(', ') || '—'} />
               </div>
+              {saveError && <p className="text-[var(--color-danger)] text-sm mt-3">{saveError}</p>}
             </>
           )}
 
@@ -252,8 +265,8 @@ export default function OnboardingPage() {
                 Next <ChevronRight size={16} />
               </Button>
             ) : (
-              <Button onClick={submit}>
-                Get Started →
+              <Button onClick={submit} loading={saving} disabled={saving}>
+                {saving ? 'Saving…' : 'Get Started →'}
               </Button>
             )}
           </div>

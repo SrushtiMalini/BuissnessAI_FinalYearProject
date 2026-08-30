@@ -2363,7 +2363,7 @@ A: For each dish, compare `rMean` (average daily quantity in last 14 days) vs `p
 A: `vite.config.ts` uses two plugins: `@vitejs/plugin-react` (JSX transform) and `@tailwindcss/vite` (Tailwind CSS processing). Path alias `@` maps to the project root. HMR (Hot Module Replacement) can be disabled via `DISABLE_HMR=true` environment variable.
 
 **Q59: How would you scale this application?**
-A: Replace localStorage with a PostgreSQL database (using Prisma ORM). Add user authentication (JWT or session-based). Move ML computations to a Python backend (FastAPI) for better performance on large datasets. Add multi-restaurant support with organization accounts. Deploy on AWS/GCP with a managed database.
+A: The app already uses a server-side SQLite database (`data/businessiq.db`) with authentication and multi-restaurant tenant isolation — SQLite is a deliberate choice appropriate to the current single-node scale. If concurrent write load grows beyond what SQLite comfortably handles, migrate to PostgreSQL as a scoped follow-up (same schema, swap the driver). Move ML computations to a Python backend (FastAPI) for better performance on large datasets. Deploy on AWS/GCP with a managed database.
 
 **Q60: What security improvements would you make?**
 A: Add HTTPS enforcement, rate limiting on AI endpoints (express-rate-limit), input sanitization for CSV uploads (already done via type coercion), Content Security Policy headers, and if adding user accounts: bcrypt password hashing, JWT with short expiry, and HTTPS-only cookies.

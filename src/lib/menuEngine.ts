@@ -1,34 +1,39 @@
 import type { MenuItem, BillingEntry, MenuQuadrant } from '../types';
 
-export function buildMenuFromBilling(entries: BillingEntry[], existingMenu: MenuItem[]): MenuItem[] {
-  const menuMap = new Map<string, MenuItem>(existingMenu.map(m => [m.name.trim().toLowerCase(), m]));
-  const dishPrices = new Map<string, number[]>();
+/** A menu is "locked" once it has at least one item — from that point on, new billing rows
+ *  are matched against it instead of silently expanding it (see matchAgainstLockedMenu). */
+export function isMenuLocked(menu: MenuItem[]): boolean {
+  return menu.length > 0;
+}
 
+export interface MenuMatchResult {
+  matched: BillingEntry[];
+  unmatched: BillingEntry[];
+  unmatchedDishNames: string[];
+}
+
+/**
+ * Matches billing rows against a restaurant's already-locked menu (used by UploadPage's
+ * unmatched-dish confirmation for both manual CSV upload and the manual "Import Today's
+ * Sales" trigger). A dish name with no case/whitespace-insensitive match in `menu` is held
+ * out as "unmatched" instead of silently expanding the menu, so the owner explicitly
+ * decides whether it's a real new dish or a POS naming mismatch/typo before it's imported.
+ */
+export function matchAgainstLockedMenu(entries: BillingEntry[], menu: MenuItem[]): MenuMatchResult {
+  const menuNames = new Set(menu.map(m => m.name.trim().toLowerCase()));
+  const matched: BillingEntry[] = [];
+  const unmatched: BillingEntry[] = [];
+  const unmatchedNamesByKey = new Map<string, string>(); // case/whitespace-insensitive key -> first-seen display casing
   for (const e of entries) {
     const key = e.dishName.trim().toLowerCase();
-    const prices = dishPrices.get(key) ?? [];
-    prices.push(e.sellingPrice);
-    dishPrices.set(key, prices);
-  }
-
-  const result: MenuItem[] = [];
-  for (const [key, prices] of dishPrices.entries()) {
-    const name = key.charAt(0).toUpperCase() + key.slice(1);
-    const existing = menuMap.get(key);
-    if (existing) {
-      result.push(existing);
+    if (menuNames.has(key)) {
+      matched.push(e);
     } else {
-      const avgPrice = Math.round(prices.reduce((s, p) => s + p, 0) / prices.length);
-      const rawMaterialCost = Math.round(avgPrice * 0.35);
-      const idBase = key.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-      const id = existingMenu.some(m => m.id === idBase) || result.some(m => m.id === idBase)
-        ? `${idBase}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-        : idBase;
-      result.push({ id, name, sellingPrice: avgPrice, rawMaterialCost });
+      unmatched.push(e);
+      if (!unmatchedNamesByKey.has(key)) unmatchedNamesByKey.set(key, e.dishName.trim());
     }
   }
-
-  return result;
+  return { matched, unmatched, unmatchedDishNames: [...unmatchedNamesByKey.values()] };
 }
 
 export interface DishMetrics {
@@ -86,6 +91,63 @@ export function classifyMenu(metrics: DishMetrics[]): MenuQuadrant {
   }
 
   return result;
+}
+
+// ─── Owner resolution of unmatched dishes (UploadPage's confirmation panel) ──
+
+export type UnmatchedDishResolution =
+  | { action: 'add'; sellingPrice: number; rawMaterialCost: number }
+  | { action: 'exclude' };
+
+export interface ResolvedImport {
+  /** Originally-matched rows plus rows for dishes the owner just added to the menu. */
+  entriesToSave: BillingEntry[];
+  /** New menu items to append to the existing (otherwise untouched) menu. */
+  newMenuItems: MenuItem[];
+  /** Rows left out because the owner marked that dish "not from this restaurant". */
+  excluded: { name: string; rowCount: number }[];
+}
+
+/**
+ * Applies the owner's explicit per-dish decision from the unmatched-dish
+ * confirmation panel to a MenuMatchResult. Every name in
+ * `match.unmatchedDishNames` must have an entry in `resolutions` — a dish with
+ * no resolution is silently skipped (excluded from both save and menu) rather
+ * than guessed at, so callers must enforce full resolution before calling this.
+ */
+export function applyDishResolutions(
+  match: MenuMatchResult,
+  existingMenu: MenuItem[],
+  resolutions: Record<string, UnmatchedDishResolution>
+): ResolvedImport {
+  const newMenuItems: MenuItem[] = [];
+  const excluded: { name: string; rowCount: number }[] = [];
+  const addedKeys = new Set<string>();
+
+  for (const name of match.unmatchedDishNames) {
+    const resolution = resolutions[name];
+    if (!resolution) continue;
+    const key = name.trim().toLowerCase();
+    const rowCount = match.unmatched.filter(e => e.dishName.trim().toLowerCase() === key).length;
+
+    if (resolution.action === 'exclude') {
+      excluded.push({ name, rowCount });
+      continue;
+    }
+
+    addedKeys.add(key);
+    const existingIds = new Set([...existingMenu, ...newMenuItems].map(m => m.id));
+    const idBase = key.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'dish';
+    const id = existingIds.has(idBase) ? `${idBase}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : idBase;
+    newMenuItems.push({ id, name: name.trim(), sellingPrice: resolution.sellingPrice, rawMaterialCost: resolution.rawMaterialCost });
+  }
+
+  const entriesToSave = [
+    ...match.matched,
+    ...match.unmatched.filter(e => addedKeys.has(e.dishName.trim().toLowerCase())),
+  ];
+
+  return { entriesToSave, newMenuItems, excluded };
 }
 
 export function getMenuProfitabilityInsight(quadrant: MenuQuadrant): string {

@@ -56,6 +56,26 @@ function RequireOnboarding({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+// The inverse of RequireOnboarding: "/" is the onboarding wizard's own route, but
+// nothing previously checked whether onboarding was already done before rendering
+// it — so a new tab, a bookmark, or just typing the bare domain always showed the
+// wizard from an empty first step, even for a fully onboarded account, looking
+// exactly like "the app forgot my session" even though the data was intact.
+function RedirectIfOnboarded({ children }: { children: ReactNode }) {
+  const restaurant = storage.getRestaurant();
+  if (restaurant) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+// Menu is a locked, explicit, owner-controlled entity (see MenuPage.tsx /
+// menuEngine.ts) — it must exist before any billing data can be uploaded, so
+// there's always a menu for upload-time dish matching to check against.
+function RequireMenu({ children }: { children: ReactNode }) {
+  const menu = storage.getMenu();
+  if (!menu.length) return <Navigate to="/menu" replace />;
+  return <>{children}</>;
+}
+
 function AppLayout({ children }: { children: ReactNode }) {
   return (
     <RequireAuth>
@@ -73,10 +93,10 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
-        <Route path="/" element={<RequireAuth><OnboardingPage /></RequireAuth>} />
+        <Route path="/" element={<RequireAuth><RedirectIfOnboarded><OnboardingPage /></RedirectIfOnboarded></RequireAuth>} />
 
         <Route path="/dashboard" element={<AppLayout><DashboardPage /></AppLayout>} />
-        <Route path="/upload" element={<AppLayout><UploadPage /></AppLayout>} />
+        <Route path="/upload" element={<AppLayout><RequireMenu><UploadPage /></RequireMenu></AppLayout>} />
         <Route path="/settings" element={<AppLayout><SettingsPage /></AppLayout>} />
         <Route path="/menu" element={<AppLayout><MenuPage /></AppLayout>} />
         <Route path="/forecast" element={<AppLayout><ForecastPage /></AppLayout>} />

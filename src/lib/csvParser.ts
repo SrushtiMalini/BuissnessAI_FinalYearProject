@@ -45,6 +45,12 @@ function detectDelimiter(sample: string): string {
   return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
 }
 
+/** Splits one CSV data line into trimmed, unquoted fields. Shared by parseCSV and parseMenuCSV. */
+function splitCSVLine(line: string, delimiter: string): string[] {
+  const cols = line.match(/(".*?"|[^",\t;|]+|(?<=,)(?=,)|(?<=^)(?=,))/g) ?? line.split(delimiter);
+  return cols.map(c => c.replace(/^["']|["']$/g, '').trim());
+}
+
 function normaliseDate(raw: string): { date: string; ambiguous: boolean } | null {
   if (!raw) return null;
   // Try ISO
@@ -129,9 +135,7 @@ export function parseCSV(
         const line = dataLines[i];
         if (!line.trim()) continue;
 
-        // Handle quoted fields
-        const cols = line.match(/(".*?"|[^",\t;|]+|(?<=,)(?=,)|(?<=^)(?=,))/g) ?? line.split(delimiter);
-        const clean = cols.map(c => c.replace(/^["']|["']$/g, '').trim());
+        const clean = splitCSVLine(line, delimiter);
 
         const rowNumber = i + 2;
         const rawDate = clean[colMap.date];
@@ -193,4 +197,73 @@ export function parseCSV(
 
     processBatch();
   });
+}
+
+// ─── Menu CSV (dish, price, cost) — for Menu Setup's standalone "Upload Menu"
+// flow. Small files, no progress callback needed. Reuses the same delimiter
+// detection and quoted-field splitting as the billing parser above. Rows still
+// land in the same editable draft table as manual entry, so saving them to the
+// menu still goes through MenuPage's existing explicit "Save Menu" button —
+// this parser only produces a preview, it never writes anywhere itself.
+
+export interface ParsedMenuItem {
+  name: string;
+  sellingPrice: number;
+  rawMaterialCost: number;
+}
+
+export interface MenuParseResult {
+  items: ParsedMenuItem[];
+  errors: string[];
+}
+
+function mapMenuHeaders(headers: string[]): Record<string, number> {
+  const map: Record<string, number> = {};
+  const aliases: Record<string, string[]> = {
+    name: ['dish', 'dish_name', 'item', 'item_name', 'name', 'product', 'menu_item'],
+    sellingPrice: ['price', 'selling_price', 'unit_price', 'rate', 'cost_price', 'mrp'],
+    rawMaterialCost: ['cost', 'raw_material_cost', 'rm_cost', 'food_cost', 'ingredient_cost'],
+  };
+  headers.forEach((h, i) => {
+    const norm = h.toLowerCase().trim().replace(/\s+/g, '_');
+    for (const [field, aliasList] of Object.entries(aliases)) {
+      if (aliasList.includes(norm) && !(field in map)) map[field] = i;
+    }
+  });
+  return map;
+}
+
+export function parseMenuCSV(text: string): MenuParseResult {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) {
+    return { items: [], errors: ['File appears empty or has only a header.'] };
+  }
+
+  const delimiter = detectDelimiter(lines[0]);
+  const headers = lines[0].split(delimiter).map(h => h.replace(/^["']|["']$/g, '').trim());
+  const colMap = mapMenuHeaders(headers);
+
+  if (!('name' in colMap)) {
+    return {
+      items: [],
+      errors: [`Could not find a dish name column. Found: ${headers.join(', ')}.`],
+    };
+  }
+
+  const items: ParsedMenuItem[] = [];
+  for (const line of lines.slice(1)) {
+    if (!line.trim()) continue;
+    const clean = splitCSVLine(line, delimiter);
+    const name = clean[colMap.name]?.trim();
+    if (!name) continue;
+
+    const rawPrice = colMap.sellingPrice !== undefined ? clean[colMap.sellingPrice] : undefined;
+    const rawCost = colMap.rawMaterialCost !== undefined ? clean[colMap.rawMaterialCost] : undefined;
+    const sellingPrice = parseFloat((rawPrice ?? '').replace(/[₹,\s]/g, '')) || 0;
+    const rawMaterialCost = parseFloat((rawCost ?? '').replace(/[₹,\s]/g, '')) || 0;
+
+    items.push({ name, sellingPrice, rawMaterialCost });
+  }
+
+  return { items, errors: [] };
 }

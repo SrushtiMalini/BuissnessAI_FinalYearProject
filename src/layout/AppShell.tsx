@@ -44,8 +44,8 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   const { pathname } = useLocation();
   const navigate = useNavigate();
 
-  function handleLogout() {
-    authClient.logout();
+  async function handleLogout() {
+    await authClient.logout();
     resetCache();
     navigate('/login', { replace: true });
   }

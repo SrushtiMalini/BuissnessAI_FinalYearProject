@@ -52,6 +52,30 @@ describe('storage.appendBilling', () => {
     expect(result.ok).toBe(false);
     expect(storage.getBilling()).toEqual([]); // cache never populated
   });
+
+  test('a large import (over 3000 rows) is split into multiple POST requests, each within the server\'s body-size limit', async () => {
+    const postBodies: unknown[][] = [];
+    const fetchMock = mockFetch((url, init) => {
+      if (url === '/api/billing' && init?.method === 'POST') {
+        const body = JSON.parse(init.body as string) as unknown[];
+        postBodies.push(body);
+        return { status: 200, body: { added: body.length, total: postBodies.flat().length } };
+      }
+      if (url === '/api/billing') return { status: 200, body: [] };
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const rows = Array.from({ length: 7000 }, (_, i) => ({
+      id: `${i}`, date: '2026-08-01', dishName: 'X', quantity: 1, sellingPrice: 10,
+    }));
+    const result = await storage.appendBilling(rows);
+
+    // 7000 rows at a 3000-row chunk size -> 3 requests (3000 + 3000 + 1000), not one 7000-row request.
+    const postCalls = fetchMock.mock.calls.filter(([url, init]: [string, RequestInit?]) => url === '/api/billing' && init?.method === 'POST');
+    expect(postCalls).toHaveLength(3);
+    expect(postBodies.map(b => b.length)).toEqual([3000, 3000, 1000]);
+    expect(result).toEqual({ added: 7000, total: 7000, ok: true });
+  });
 });
 
 describe('storage.setMenu', () => {
@@ -74,6 +98,35 @@ describe('storage.setMenu', () => {
     const ok = await storage.setMenu([{ id: 'x', name: 'X', sellingPrice: 100, rawMaterialCost: 40 }]);
     expect(ok).toBe(false);
     expect(storage.getMenu()).toEqual([]);
+  });
+});
+
+describe('storage.getRestaurant / setRestaurant', () => {
+  test('PUTs the profile and updates the cache on success', async () => {
+    const profile = { name: 'Test Cafe', ownerName: 'Owner', city: 'Bengaluru', cuisine: '', establishmentType: 'cafe' as const,
+      daysOpenPerWeek: 7, mealPeriods: [], trackingMethod: 'manual' as const, priorities: [] };
+    const fetchMock = mockFetch((url, init) => {
+      expect(url).toBe('/api/restaurant-profile');
+      expect(init?.method).toBe('PUT');
+      return { status: 200, body: { ok: true } };
+    });
+
+    const ok = await storage.setRestaurant(profile);
+    expect(ok).toBe(true);
+    expect(storage.getRestaurant()).toEqual(profile);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('failure returns false and does not touch the cache', async () => {
+    mockFetch(() => ({ status: 500, body: {} }));
+    const ok = await storage.setRestaurant({ name: 'X', ownerName: '', city: '', cuisine: '', establishmentType: 'cafe',
+      daysOpenPerWeek: 7, mealPeriods: [], trackingMethod: 'manual', priorities: [] });
+    expect(ok).toBe(false);
+    expect(storage.getRestaurant()).toBeNull();
+  });
+
+  test('reads sync off the cache (never fetches on its own — populated by hydrate())', () => {
+    expect(storage.getRestaurant()).toBeNull();
   });
 });
 

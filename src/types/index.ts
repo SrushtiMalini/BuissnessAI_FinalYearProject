@@ -169,6 +169,24 @@ export interface Opportunity {
   actedOnDate?: string | null;
 }
 
+// ─── Forecast Accuracy Tracking ─────────────────────────────────────────────
+
+export interface ForecastAccuracyEntry {
+  id: string;
+  date: string; // YYYY-MM-DD, the date being forecasted
+  dishName: string;
+  predictedValue: number;
+  /** Actual quantity sold, filled in once `date` has real billing data; null until then. */
+  actualValue: number | null;
+  absoluteError: number | null;
+  createdAt: string;
+}
+
+export interface ForecastAccuracyPoint {
+  date: string;
+  mae: number; // average absolute error across dishes resolved for that date
+}
+
 export interface PromotionRecord {
   id: string;
   name: string;

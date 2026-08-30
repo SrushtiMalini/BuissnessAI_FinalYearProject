@@ -61,6 +61,12 @@ The forecasting module provides:
 
 The forecasting model is implemented within the project without depending on an external machine-learning library for the core weighted moving average model.
 
+**Trained Model (Beta):** the Forecast page also offers a real, trained
+`GradientBoostingRegressor` (scikit-learn), fit on the restaurant's own billing history
+via a one-click "Train Model" button. It runs alongside — not instead of — the WMA
+baseline above, and the page shows both predictions side by side so the two can be
+compared directly. See `server/ml/train_demand_model.py` / `server/ml/predict_demand.py`.
+
 ---
 
 ## 🤖 AI Business Analyst
@@ -217,8 +223,8 @@ BusinessIQ
 
 * CSV parsing
 * Custom analytics functions
-* Custom forecasting logic
-* Local application storage
+* Custom forecasting logic (Weighted Moving Average)
+* Server-side SQLite database (`data/businessiq.db`)
 
 ---
 
@@ -278,6 +284,7 @@ Make sure the following are installed:
 * Node.js
 * npm
 * Git
+* Python 3.9+ and pip (new requirement — powers the trained Demand Forecasting model; see below)
 * VS Code (recommended)
 
 Check Node.js:
@@ -313,6 +320,19 @@ cd BuissnessAI_FinalYearProject
 ```bash
 npm install
 ```
+
+**New Python runtime dependency:** the Forecast page's "Train Model" feature (a real
+scikit-learn `GradientBoostingRegressor`, alongside the original formula-based WMA
+forecast) shells out to Python. Install its dependencies once:
+
+```bash
+pip install -r requirements.txt
+```
+
+This is the project's first Python dependency — everything else still runs on Node.
+If `python`/`pip` aren't on your PATH, install Python 3.9+ first. The rest of the app
+(including the WMA baseline forecast) works fine without this step; only "Train Model"
+and the trained-model comparison need it.
 
 ---
 
@@ -476,7 +496,7 @@ Do not replace the API key with a real key inside `.env.example`.
 
 Possible future improvements include:
 
-* PostgreSQL integration
+* Migration from SQLite to PostgreSQL (scoped for if/when concurrent load grows beyond what SQLite comfortably handles — SQLite is a deliberate choice for the current single-node scale)
 * Real-time POS integration
 * User authentication
 * Multi-restaurant support

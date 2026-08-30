@@ -68,6 +68,36 @@ db.exec(`
     acted_on_date TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_opportunities_restaurant ON opportunities(restaurant_id);
+
+  CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id TEXT PRIMARY KEY,
+    restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+    token_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_refresh_tokens_restaurant ON refresh_tokens(restaurant_id);
+  CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash);
+
+  CREATE TABLE IF NOT EXISTS restaurant_profile (
+    restaurant_id TEXT PRIMARY KEY REFERENCES restaurants(id),
+    content TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS forecast_accuracy (
+    id TEXT PRIMARY KEY,
+    restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+    date TEXT NOT NULL,
+    dish_name TEXT NOT NULL,
+    predicted_value REAL NOT NULL,
+    actual_value REAL,
+    absolute_error REAL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_forecast_accuracy_restaurant ON forecast_accuracy(restaurant_id);
+  CREATE INDEX IF NOT EXISTS idx_forecast_accuracy_restaurant_date ON forecast_accuracy(restaurant_id, date);
 `);
 
 export interface RestaurantRow {
@@ -120,4 +150,30 @@ export interface OpportunityRow {
   resolved_date: string | null;
   outcome: number | null;
   acted_on_date: string | null;
+}
+
+export interface RefreshTokenRow {
+  id: string;
+  restaurant_id: string;
+  token_hash: string;
+  created_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+}
+
+export interface RestaurantProfileRow {
+  restaurant_id: string;
+  content: string;
+  updated_at: string;
+}
+
+export interface ForecastAccuracyRow {
+  id: string;
+  restaurant_id: string;
+  date: string;
+  dish_name: string;
+  predicted_value: number;
+  actual_value: number | null;
+  absolute_error: number | null;
+  created_at: string;
 }

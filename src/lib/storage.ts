@@ -2,13 +2,15 @@ import type {
   Restaurant, MenuItem, BillingEntry, Report, ChatMessage,
   IngredientMapping, WastagePrediction, PricingRecommendation,
   PromotionRecord, Opportunity, OpportunityStatus,
+  ForecastAccuracyEntry, ForecastAccuracyPoint,
 } from '../types';
+import { authClient } from './authClient';
 
-// Local-only keys. Billing/menu/reports/opportunities live on the server now (see below) —
-// they are NOT namespaced client-side anymore; the server scopes every query by the
-// restaurantId it reads from the verified JWT, which is what makes tenant isolation real.
+// Local-only keys. Billing/menu/reports/opportunities/restaurant profile live on the
+// server now (see below) — they are NOT namespaced client-side anymore; the server
+// scopes every query by the restaurantId it reads from the verified JWT, which is
+// what makes tenant isolation real.
 const KEYS = {
-  restaurant: 'biq_restaurant',
   chat: 'biq_chat',
   ingredientMappings: 'biq_ingredient_mappings',
   wastageLog: 'biq_wastage_log',
@@ -23,6 +25,11 @@ const LEGACY_KEYS = {
   menu: 'biq_menu',
   reports: 'biq_reports',
   opportunities: 'biq_opportunities',
+  // The restaurant profile (onboarding identity/format/tracking/priorities) was
+  // local-only until this fix — completion state lived in the browser, not the
+  // account, so a fresh device/browser saw a completed account as un-onboarded.
+  // Migrated to the server exactly once, same as the others above.
+  restaurant: 'biq_restaurant',
 } as const;
 
 function nsKey(base: string): string {
@@ -61,24 +68,67 @@ function remove(key: string): void {
 // once on app boot for an already-authenticated session (see App.tsx) — until then,
 // reads return [] rather than throwing, same as the old "key not set yet" behavior.
 
+export interface TrainSummary {
+  ok: boolean;
+  error?: string;
+  rowsUsed?: number;
+  daysUsed?: number;
+  dishCount?: number;
+  trainRows?: number;
+  testRows?: number;
+  mae?: number;
+  trainedAt?: string;
+}
+
+export interface CompareResult {
+  wma: number | null;
+  trainedModel: number | null;
+  trainedModelStatus: string | null;
+}
+
 let billingCache: BillingEntry[] | null = null;
 let menuCache: MenuItem[] | null = null;
 let reportsCache: Report[] | null = null;
 let opportunitiesCache: Opportunity[] | null = null;
+let restaurantProfileCache: Restaurant | null = null;
 
 function authHeaders(): Record<string, string> {
   const token = localStorage.getItem('biq_auth_token');
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/**
+ * Wraps fetch with the access-token-expiry dance: on a 401, try exactly one
+ * silent refresh (rotates the refresh token server-side) and retry the same
+ * request once with the new access token. If the refresh itself fails (refresh
+ * token also expired/revoked), the session is over — clear it and hard-redirect
+ * to /login rather than leaving the app stuck on a request that will never
+ * succeed. A non-401 response (including a 401 that survives the retry) is
+ * simply returned for the caller to handle as before.
+ */
+async function fetchWithRefresh(path: string, init: RequestInit): Promise<Response> {
+  const res = await fetch(path, init);
+  if (res.status !== 401) return res;
+
+  const newAccessToken = await authClient.refreshAccessToken();
+  if (!newAccessToken) {
+    authClient.clearSession();
+    if (typeof window !== 'undefined') window.location.href = '/login';
+    return res;
+  }
+
+  const headers = { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${newAccessToken}` };
+  return fetch(path, { ...init, headers });
+}
+
 async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(path, { headers: authHeaders() });
+  const res = await fetchWithRefresh(path, { headers: authHeaders() });
   if (!res.ok) throw new Error(`GET ${path} failed (${res.status})`);
   return res.json();
 }
 
 async function apiSend<T>(path: string, method: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetchWithRefresh(path, {
     method,
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -101,8 +151,9 @@ async function migrateLegacyLocalData(): Promise<void> {
   const legacyMenu = get<MenuItem[]>(LEGACY_KEYS.menu) ?? [];
   const legacyReports = get<Report[]>(LEGACY_KEYS.reports) ?? [];
   const legacyOpportunities = get<Opportunity[]>(LEGACY_KEYS.opportunities) ?? [];
+  const legacyRestaurant = get<Restaurant>(LEGACY_KEYS.restaurant);
 
-  if (!legacyBilling.length && !legacyMenu.length && !legacyReports.length && !legacyOpportunities.length) return;
+  if (!legacyBilling.length && !legacyMenu.length && !legacyReports.length && !legacyOpportunities.length && !legacyRestaurant) return;
 
   try {
     const serverBilling = await apiGet<BillingEntry[]>('/api/billing');
@@ -115,34 +166,54 @@ async function migrateLegacyLocalData(): Promise<void> {
       await apiSend('/api/reports', 'POST', report);
     }
     if (legacyOpportunities.length) await apiSend('/api/opportunities', 'POST', legacyOpportunities);
+    if (legacyRestaurant) {
+      const serverProfile = await apiGet<Restaurant | null>('/api/restaurant-profile');
+      if (!serverProfile) await apiSend('/api/restaurant-profile', 'PUT', legacyRestaurant);
+    }
 
     remove(LEGACY_KEYS.billing);
     remove(LEGACY_KEYS.menu);
     remove(LEGACY_KEYS.reports);
     remove(LEGACY_KEYS.opportunities);
+    remove(LEGACY_KEYS.restaurant);
   } catch (error) {
     console.error('Legacy data migration failed — will retry on next login:', error);
   }
 }
 
-/** Call once after login/signup, and once on app boot if already authenticated. */
+/**
+ * Call once after login/signup, and once on app boot if already authenticated.
+ *
+ * Uses allSettled, not all: these 5 requests are independent resources, and an
+ * `all`-with-one-throw wipes out every cache (nothing gets assigned), not just the
+ * one that failed. That turned a single unavailable endpoint into "this session
+ * can't restaurant-profile / has no menu / has no billing" simultaneously — this
+ * is exactly how a version-skewed or partially-deployed backend (missing one new
+ * route/table) manifested as "app keeps bouncing back to onboarding," even though
+ * the other 4 endpoints were healthy the whole time. Each resource now succeeds or
+ * fails independently; a failed one keeps its previous cached value (or null) and
+ * is retried on the next hydrate(), instead of dragging the healthy ones down.
+ */
 export async function hydrate(): Promise<void> {
   if (!localStorage.getItem('biq_auth_token')) return;
-  try {
-    await migrateLegacyLocalData();
-    const [billing, menu, reports, opportunities] = await Promise.all([
-      apiGet<BillingEntry[]>('/api/billing'),
-      apiGet<MenuItem[]>('/api/menu'),
-      apiGet<Report[]>('/api/reports'),
-      apiGet<Opportunity[]>('/api/opportunities'),
-    ]);
-    billingCache = billing;
-    menuCache = menu;
-    reportsCache = reports;
-    opportunitiesCache = opportunities;
-  } catch (error) {
-    console.error('Failed to load restaurant data from the server:', error);
-  }
+  await migrateLegacyLocalData();
+  const [billing, menu, reports, opportunities, restaurantProfile] = await Promise.allSettled([
+    apiGet<BillingEntry[]>('/api/billing'),
+    apiGet<MenuItem[]>('/api/menu'),
+    apiGet<Report[]>('/api/reports'),
+    apiGet<Opportunity[]>('/api/opportunities'),
+    apiGet<Restaurant | null>('/api/restaurant-profile'),
+  ]);
+  if (billing.status === 'fulfilled') billingCache = billing.value;
+  else console.error('Failed to load billing:', billing.reason);
+  if (menu.status === 'fulfilled') menuCache = menu.value;
+  else console.error('Failed to load menu:', menu.reason);
+  if (reports.status === 'fulfilled') reportsCache = reports.value;
+  else console.error('Failed to load reports:', reports.reason);
+  if (opportunities.status === 'fulfilled') opportunitiesCache = opportunities.value;
+  else console.error('Failed to load opportunities:', opportunities.reason);
+  if (restaurantProfile.status === 'fulfilled') restaurantProfileCache = restaurantProfile.value;
+  else console.error('Failed to load restaurant profile:', restaurantProfile.reason);
 }
 
 /** Clears the in-memory cache on logout so the next login's hydrate() starts clean. */
@@ -151,11 +222,24 @@ export function resetCache(): void {
   menuCache = null;
   reportsCache = null;
   opportunitiesCache = null;
+  restaurantProfileCache = null;
 }
 
 export const storage = {
-  getRestaurant: () => get<Restaurant>(KEYS.restaurant),
-  setRestaurant: (r: Restaurant) => set(KEYS.restaurant, r),
+  // Server-backed (see hydrate()) — so "has this restaurant finished onboarding"
+  // is a fact about the account, not the browser. Read stays sync off the cache,
+  // same pattern as menu/billing.
+  getRestaurant: (): Restaurant | null => restaurantProfileCache,
+  setRestaurant: async (r: Restaurant): Promise<boolean> => {
+    try {
+      await apiSend('/api/restaurant-profile', 'PUT', r);
+      restaurantProfileCache = r;
+      return true;
+    } catch (error) {
+      console.error('Failed to save restaurant profile:', error);
+      return false;
+    }
+  },
 
   getMenu: (): MenuItem[] => menuCache ?? [],
   setMenu: async (items: MenuItem[]): Promise<boolean> => {
@@ -170,10 +254,28 @@ export const storage = {
   },
 
   getBilling: (): BillingEntry[] => billingCache ?? [],
-  /** Adds new rows to existing history; the server dedupes identical (date, time, dish, quantity, price) rows. */
+  /**
+   * Adds new rows to existing history; the server dedupes identical (date, time, dish,
+   * quantity, price) rows. Sent in chunks, not one request — a single large POS export
+   * (e.g. ~16,800 rows / ~2.3MB as JSON) exceeds the server's `express.json({limit:"2mb"})`
+   * body-size cap on its own, which previously surfaced as a generic "could not reach the
+   * server" failure (a 413 PayloadTooLargeError, not a network/auth failure). Each chunk
+   * comfortably clears that cap even for verbose POS data with long dish names.
+   */
   appendBilling: async (newEntries: BillingEntry[]): Promise<{ added: number; total: number; ok: boolean }> => {
+    const CHUNK_SIZE = 3000;
+    const chunks: BillingEntry[][] = [];
+    for (let i = 0; i < newEntries.length; i += CHUNK_SIZE) chunks.push(newEntries.slice(i, i + CHUNK_SIZE));
+    if (chunks.length === 0) chunks.push([]); // still round-trip once so `total` reflects the server, same as before chunking existed
+
     try {
-      const { added, total } = await apiSend<{ added: number; total: number }>('/api/billing', 'POST', newEntries);
+      let added = 0;
+      let total = billingCache?.length ?? 0;
+      for (const chunk of chunks) {
+        const res = await apiSend<{ added: number; total: number }>('/api/billing', 'POST', chunk);
+        added += res.added;
+        total = res.total;
+      }
       billingCache = await apiGet<BillingEntry[]>('/api/billing');
       return { added, total, ok: true };
     } catch (error) {
@@ -261,6 +363,48 @@ export const storage = {
       console.error('Failed to update opportunity status:', error);
     }
   },
+
+  // Forecast Accuracy Tracking — no client-side cache; ForecastPage fetches fresh.
+  getForecastAccuracySeries: (): Promise<ForecastAccuracyPoint[]> =>
+    apiGet<ForecastAccuracyPoint[]>('/api/forecast-accuracy'),
+  getForecastAccuracyRaw: (): Promise<ForecastAccuracyEntry[]> =>
+    apiGet<ForecastAccuracyEntry[]>('/api/forecast-accuracy/raw'),
+  syncForecastAccuracy: async (
+    inserts: { date: string; dishName: string; predictedValue: number }[],
+    updates: { id: string; actualValue: number; absoluteError: number }[]
+  ): Promise<void> => {
+    try {
+      await apiSend('/api/forecast-accuracy', 'POST', { inserts, updates });
+    } catch (error) {
+      console.error('Failed to sync forecast accuracy:', error);
+    }
+  },
+
+  // Test Data Generator ("Generate Next Day" testing tool) — generate() only
+  // previews and holds data server-side; confirm() inserts it (refreshing the
+  // billing cache exactly like appendBilling does) and hands back the rows so
+  // the caller can run them through the rest of the real import pipeline.
+  generateNextDayTestData: (): Promise<{ requestId: string; date: string; totalOrders: number; totalRevenue: number; rowCount: number }> =>
+    apiSend('/api/test-data/generate-next-day', 'POST'),
+  confirmNextDayTestData: async (requestId: string): Promise<{ added: number; total: number; entries: BillingEntry[] }> => {
+    const result = await apiSend<{ added: number; total: number; entries: BillingEntry[] }>(
+      '/api/test-data/confirm-next-day', 'POST', { requestId }
+    );
+    billingCache = await apiGet<BillingEntry[]>('/api/billing');
+    return result;
+  },
+  discardNextDayTestData: async (requestId: string): Promise<void> => {
+    await apiSend('/api/test-data/discard-next-day', 'POST', { requestId });
+  },
+
+  // Trained Demand Model (GradientBoostingRegressor) — runs alongside the WMA
+  // baseline in forecasting.ts, does not replace it. Not cached: always fresh.
+  trainDemandModel: async (): Promise<TrainSummary> => {
+    const res = await fetchWithRefresh('/api/forecast/train', { method: 'POST', headers: authHeaders() });
+    return res.json();
+  },
+  compareForecast: (dish: string, date: string): Promise<CompareResult> =>
+    apiGet<CompareResult>(`/api/forecast/compare?dish=${encodeURIComponent(dish)}&date=${encodeURIComponent(date)}`),
 
   clearAll: async (): Promise<void> => {
     Object.values(KEYS).forEach(k => remove(k));

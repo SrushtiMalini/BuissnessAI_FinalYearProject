@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import type { ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Save, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, Save, ChevronDown, ChevronUp, Upload } from 'lucide-react';
 import { storage } from '../lib/storage';
 import { computeDishMetrics, classifyMenu } from '../lib/menuEngine';
+import { parseMenuCSV } from '../lib/csvParser';
 import { Button, Card, Badge, PageHeader } from '../design-system/components';
 import type { MenuItem } from '../types';
 
@@ -22,6 +24,8 @@ export default function MenuPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [saved, setSaved] = useState(false);
   const [showQuadrants, setShowQuadrants] = useState(true);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvMessage, setCsvMessage] = useState('');
 
   useEffect(() => {
     setItems(storage.getMenu());
@@ -46,7 +50,44 @@ export default function MenuPage() {
   async function save() {
     await storage.setMenu(items.filter(i => i.name.trim()));
     setSaved(true);
-    setTimeout(() => { setSaved(false); navigate('/dashboard'); }, 1000);
+    // First-time setup (no billing history yet): the next mandatory step is
+    // Upload Data, now unblocked since the menu has at least one item. An
+    // established restaurant editing its menu later just returns to the
+    // Dashboard as before.
+    const next = storage.getBilling().length > 0 ? '/dashboard' : '/upload';
+    setTimeout(() => { setSaved(false); navigate(next); }, 1000);
+  }
+
+  function handleCsvFile(file: File) {
+    setCsvMessage('');
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = e.target?.result as string;
+      const { items: parsed, errors } = parseMenuCSV(text);
+      if (errors.length) {
+        setCsvMessage(errors[0]);
+        return;
+      }
+      const existingKeys = new Set(items.map(i => i.name.trim().toLowerCase()));
+      const seen = new Set<string>();
+      const toAdd: MenuItem[] = [];
+      let skipped = 0;
+      for (const p of parsed) {
+        const key = p.name.trim().toLowerCase();
+        if (existingKeys.has(key) || seen.has(key)) { skipped++; continue; }
+        seen.add(key);
+        toAdd.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: p.name, sellingPrice: p.sellingPrice, rawMaterialCost: p.rawMaterialCost });
+      }
+      // Rows land in the same editable draft table as manual entry — nothing is
+      // persisted until the owner reviews them here and clicks Save Menu, same
+      // explicit-confirmation requirement as adding a dish by hand.
+      setItems(prev => [...prev, ...toAdd]);
+      setCsvMessage(
+        `Added ${toAdd.length} dish${toAdd.length === 1 ? '' : 'es'} from the file to the table below — review and click Save Menu to confirm.` +
+        (skipped ? ` (${skipped} skipped — already in your menu or duplicated in the file.)` : '')
+      );
+    };
+    reader.readAsText(file);
   }
 
   function getQuadrant(name: string): keyof typeof QUADRANT_CONFIG | '' {
@@ -68,6 +109,30 @@ export default function MenuPage() {
           </Button>
         }
       />
+
+      <Card className="mb-6" padding="sm">
+        <div className="flex items-center justify-between gap-3 p-2">
+          <div>
+            <p className="text-[var(--text-sm)] font-medium text-[var(--color-text-primary)]">Upload Menu (CSV)</p>
+            <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] mt-0.5">
+              Prefer a bulk upload over typing each dish? Columns: dish, price, cost.
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => csvInputRef.current?.click()}>
+            <Upload size={14} /> Choose file
+          </Button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,.txt"
+            className="hidden"
+            onChange={(e: ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) handleCsvFile(f); e.target.value = ''; }}
+          />
+        </div>
+        {csvMessage && (
+          <p className="text-[var(--text-xs)] text-[var(--color-text-secondary)] px-2 pb-2">{csvMessage}</p>
+        )}
+      </Card>
 
       {billing.length > 0 && (
         <Card className="mb-6" padding="sm">

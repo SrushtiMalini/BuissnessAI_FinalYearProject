@@ -1,46 +1,12 @@
 // Shared feature engineering utilities for all ML modules
 
 import type { BillingEntry } from '../../types';
+import FESTIVAL_CALENDAR from './festival_calendar.json';
 
-const INDIAN_FESTIVALS_2024_2025: Record<string, string> = {
-  '2024-01-15': 'Makar Sankranti',
-  '2024-01-26': 'Republic Day',
-  '2024-03-25': 'Holi',
-  '2024-04-14': 'Baisakhi',
-  '2024-04-17': 'Ram Navami',
-  '2024-04-21': 'Easter',
-  '2024-06-17': 'Eid ul-Adha',
-  '2024-08-15': 'Independence Day',
-  '2024-08-26': 'Janmashtami',
-  '2024-09-07': 'Ganesh Chaturthi',
-  '2024-10-02': 'Gandhi Jayanti',
-  '2024-10-12': 'Navratri Start',
-  '2024-10-24': 'Dussehra',
-  '2024-10-31': 'Halloween',
-  '2024-11-01': 'Diwali',
-  '2024-11-15': 'Guru Nanak Jayanti',
-  '2024-12-25': 'Christmas',
-  '2024-12-31': 'New Year Eve',
-  '2025-01-14': 'Makar Sankranti',
-  '2025-01-26': 'Republic Day',
-  '2025-03-14': 'Holi',
-  '2025-04-06': 'Ram Navami',
-  '2025-04-13': 'Baisakhi',
-  '2025-04-14': 'Ambedkar Jayanti',
-  '2025-04-18': 'Good Friday',
-  '2025-08-15': 'Independence Day',
-  '2025-08-16': 'Janmashtami',
-  '2025-08-27': 'Ganesh Chaturthi',
-  '2025-10-02': 'Gandhi Jayanti',
-  '2025-10-20': 'Dussehra',
-  '2025-10-21': 'Navratri',
-  '2025-11-01': 'Diwali',
-  '2025-11-05': 'Guru Nanak Jayanti',
-  '2025-12-25': 'Christmas',
-  '2025-12-31': 'New Year Eve',
-  '2026-01-14': 'Makar Sankranti',
-  '2026-01-26': 'Republic Day',
-};
+// Shared reference: also read directly by server/ml/train_demand_model.py and
+// server/ml/predict_demand.py so the Python-trained model uses the exact same
+// festival dates as every TS-side ML module.
+const INDIAN_FESTIVALS_2024_2025: Record<string, string> = FESTIVAL_CALENDAR;
 
 export function isFestival(dateStr: string): boolean {
   return dateStr in INDIAN_FESTIVALS_2024_2025;
